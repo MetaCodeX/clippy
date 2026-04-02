@@ -1,0 +1,32 @@
+# Binarios compilados
+bin/
+piper
+backend
+backend_cli
+clippy_backend
+backend_server.log
+backend.log
+cmd/backend/backend
+cmd/backend/main
+
+# Modelos de voz (archivos pesados)
+models/
+*.onnx
+*.onnx.json
+
+# Datos locales del usuario (privacidad)
+psycho_profile.json
+clippy_memories.json
+
+# Archivos temporales
+*.zip
+*.tar.gz
+cmd/backend/test.wav
+test_120_log.md
+
+# Logs
+*.log
+models/
+assets/models/
+*.onnx
+.venv/

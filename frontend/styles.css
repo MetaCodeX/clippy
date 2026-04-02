@@ -1,0 +1,609 @@
+@font-face {
+    font-family: 'TahomaXP';
+    src: url('fonts/tahoma.otf') format('opentype'),
+         url('fonts/tahoma.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+}
+
+body {
+    background-color: #ededed;
+    font-family: 'TahomaXP', 'Tahoma', 'Segoe UI', Arial, sans-serif;
+    margin: 0;
+    overflow: hidden; 
+    box-sizing: border-box;
+    /* Suavizado tipo pixel-art */
+    -webkit-font-smoothing: none;
+    font-smooth: never;
+}
+
+*, *:before, *:after { box-sizing: inherit; }
+
+.controls-panel {
+    position: absolute; top: 20px; left: 20px;
+    display: flex; flex-direction: column;
+    background: #ffffff; padding: 20px; border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1); z-index: 10;
+}
+
+.controls-panel h3 { margin: 0 0 12px 0; font-size: 16px; color: #333; }
+#clippyInput {
+    width: 250px; height: 120px; resize: vertical; padding: 10px;
+    font-family: 'Courier New', monospace; font-size: 13px;
+    border: 1px solid #ccc; border-radius: 4px; line-height: 1.4;
+}
+.panel-hint {
+    margin-top: 7px; font-size: 11px; color: #999; line-height: 1.5;
+}
+.panel-hint code {
+    background: #f4f4f4; padding: 1px 4px;
+    border-radius: 2px; font-size: 11px; color: #555;
+}
+
+/* WIDGET FÍSICO */
+.clippy-wrapper {
+    position: fixed; top: 50vh; left: 50vw;
+    width: 160px; height: 160px;
+    transform: translate(-50%, -50%);
+    user-select: none; z-index: 1000;
+}
+
+.clippy-character {
+    display: flex; justify-content: center; align-items: center;
+    margin: 0; cursor: grab;
+    z-index: 5; transition: transform 0.1s;
+    text-align: center; width: 100%; height: 100%;
+}
+.clippy-character img {
+    width: 100%; height: 100%; object-fit: contain;
+    pointer-events: none; /* Asegura que dragAnchor reciba los clicks */
+    filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.3));
+}
+.clippy-character:active { cursor: grabbing; transform: scale(0.95); }
+
+/* BURBUJA CLÁSICA SIN VARIABLES MATEMÁTICAS */
+.clippy-bubble {
+    position: absolute; 
+    background-color: #ffffe1; border: 1px solid #000000;
+    border-radius: 8px; padding: 12px 18px; color: #000000;
+    font-size: 22px; line-height: 1.25; font-weight: normal;
+    box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.4); 
+    width: max-content; max-width: 320px; min-width: 80px; 
+    word-wrap: break-word; z-index: 4;
+}
+.clippy-bubble p { margin: 0 0 12px 0; }
+.clippy-bubble p:last-child { margin: 0; }
+.clippy-bubble::before {
+    content: ""; position: absolute; 
+    width: 14px; height: 14px; background-color: #ffffe1;
+    transform: rotate(45deg); z-index: 10;
+}
+
+/* =======================================
+   BOTONES E INTERACCIONES RETRO
+======================================= */
+.clippy-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 8px;
+    padding-top: 4px;
+    border-top: 1px solid #e0e0c8;
+}
+
+/* Fila de botones (1 o 2 por fila) */
+.btn-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: nowrap;
+}
+.btn-row.btn-row-full {
+    width: 100%;
+}
+/* Fila centrada (ignora alineación por cuadrante) */
+.btn-row.btn-row-center {
+    justify-content: center !important;
+    width: 100%;
+}
+
+/* Alineación horizontal dinámica por cuadrante */
+.pos-left .clippy-actions,
+.pos-top-left .clippy-actions,
+.pos-bottom-left .clippy-actions {
+    align-items: flex-end;
+}
+.pos-right .clippy-actions,
+.pos-top-right .clippy-actions,
+.pos-bottom-right .clippy-actions {
+    align-items: flex-start;
+}
+.pos-top .clippy-actions,
+.pos-bottom .clippy-actions {
+    align-items: center;
+}
+
+/* Botón clásico Office 97 — tamaño mejorado */
+.clippy-btn {
+    background-color: #dfdfdf;
+    border-top: 1px solid #ffffff;
+    border-left: 1px solid #ffffff;
+    border-bottom: 1px solid #777777;
+    border-right: 1px solid #777777;
+    outline: 1px solid #aaa;
+    font-family: inherit;
+    font-size: 16px;
+    padding: 4px 16px;
+    cursor: pointer;
+    color: #000;
+    user-select: none;
+    white-space: nowrap;
+}
+.clippy-btn:hover {
+    background-color: #e8e8e8;
+}
+.clippy-btn:active {
+    border-top: 1px solid #777777;
+    border-left: 1px solid #777777;
+    border-bottom: 1px solid #ffffff;
+    border-right: 1px solid #ffffff;
+    background-color: #d0d0d0;
+    padding: 5px 15px 3px 17px;
+}
+
+/* Botón ancho completo (llena toda la fila) */
+.clippy-btn.btn-full {
+    flex: 1;
+    text-align: center;
+    white-space: normal;
+}
+
+/* =================================================================
+   ORIENTACIONES 8-CUADRANTES - GEOMETRÍA CORRECTA DEFINITIVA
+   
+   CSS rotate(45deg) en coordenadas pantalla (y↓):
+   - TL corner → PUNTA ARRIBA  → border-top  + border-left
+   - TR corner → PUNTA DERECHA → border-top  + border-right
+   - BR corner → PUNTA ABAJO   → border-right + border-bottom
+   - BL corner → PUNTA IZQ     → border-bottom + border-left
+   
+   Wrapper = 160px. Gap burbuja = 8px. Offset total = 168px.
+================================================================= */
+
+/* 1. POS-TOP: Clip abajo → Burbuja arriba → Flecha apunta ↓ (BR corner) */
+.clippy-wrapper.pos-top .clippy-bubble {
+    bottom: 168px; left: 50%; transform: translateX(-50%);
+}
+.clippy-wrapper.pos-top .clippy-bubble::before {
+    bottom: -8px; left: 50%; margin-left: -7px;
+    top: auto; right: auto;
+    border-right: 1px solid #000; border-bottom: 1px solid #000;
+    border-top: none; border-left: none;
+}
+
+/* 2. POS-BOTTOM: Clip arriba → Burbuja abajo → Flecha apunta ↑ (TL corner) */
+.clippy-wrapper.pos-bottom .clippy-bubble {
+    top: 168px; left: 50%; transform: translateX(-50%);
+}
+.clippy-wrapper.pos-bottom .clippy-bubble::before {
+    top: -8px; left: 50%; margin-left: -7px;
+    bottom: auto; right: auto;
+    border-top: 1px solid #000; border-left: 1px solid #000;
+    border-bottom: none; border-right: none;
+}
+
+/* 3. POS-LEFT: Clip derecha → Burbuja izquierda → Flecha apunta → (TR corner) */
+.clippy-wrapper.pos-left .clippy-bubble {
+    right: 168px; top: 50%; transform: translateY(-50%);
+}
+.clippy-wrapper.pos-left .clippy-bubble::before {
+    right: -8px; top: 50%; margin-top: -7px;
+    left: auto; bottom: auto;
+    border-top: 1px solid #000; border-right: 1px solid #000;
+    border-bottom: none; border-left: none;
+}
+
+/* 4. POS-RIGHT: Clip izquierda → Burbuja derecha → Flecha apunta ← (BL corner) */
+.clippy-wrapper.pos-right .clippy-bubble {
+    left: 168px; top: 50%; transform: translateY(-50%);
+}
+.clippy-wrapper.pos-right .clippy-bubble::before {
+    left: -8px; top: 50%; margin-top: -7px;
+    right: auto; bottom: auto;
+    border-bottom: 1px solid #000; border-left: 1px solid #000;
+    border-top: none; border-right: none;
+}
+
+/* 5. POS-BOTTOM-RIGHT: Clip top-left → Burbuja abajo-derecha → Flecha ↑ (TL corner, cerca borde izq) */
+.clippy-wrapper.pos-bottom-right .clippy-bubble {
+    top: 160px; left: 70px;
+}
+.clippy-wrapper.pos-bottom-right .clippy-bubble::before {
+    top: -8px; left: 8px;
+    bottom: auto; right: auto;
+    border-top: 1px solid #000; border-left: 1px solid #000;
+    border-bottom: none; border-right: none;
+}
+
+/* 6. POS-BOTTOM-LEFT: Clip top-right → Burbuja abajo-izquierda → Flecha ↑ (TL corner, cerca borde der) */
+.clippy-wrapper.pos-bottom-left .clippy-bubble {
+    top: 160px; right: 70px;
+}
+.clippy-wrapper.pos-bottom-left .clippy-bubble::before {
+    top: -8px; right: 8px;
+    bottom: auto; left: auto;
+    border-top: 1px solid #000; border-left: 1px solid #000;
+    border-bottom: none; border-right: none;
+}
+
+/* 7. POS-TOP-RIGHT: Clip bottom-left → Burbuja arriba-derecha → Flecha ↓ (BR corner, cerca borde izq) */
+.clippy-wrapper.pos-top-right .clippy-bubble {
+    bottom: 160px; left: 70px;
+}
+.clippy-wrapper.pos-top-right .clippy-bubble::before {
+    bottom: -8px; left: 8px;
+    top: auto; right: auto;
+    border-right: 1px solid #000; border-bottom: 1px solid #000;
+    border-top: none; border-left: none;
+}
+
+/* 8. POS-TOP-LEFT: Clip bottom-right → Burbuja arriba-izquierda → Flecha ↓ (BR corner, cerca borde der) */
+.clippy-wrapper.pos-top-left .clippy-bubble {
+    bottom: 160px; right: 70px;
+}
+.clippy-wrapper.pos-top-left .clippy-bubble::before {
+    bottom: -8px; right: 8px;
+    top: auto; left: auto;
+    border-right: 1px solid #000; border-bottom: 1px solid #000;
+    border-top: none; border-left: none;
+}
+
+/* =================================================================
+   SISTEMA DE RADIO — V37
+================================================================= */
+
+/* btn-sistema eliminado — botones de sistema usan el mismo estilo retro */
+.clippy-btn.btn-sm { font-size: 13px; padding: 2px 10px; }
+
+/* Reproductor Radio */
+.radio-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px; font-size: 18px; font-weight: bold;
+}
+.radio-close-btn {
+    background: none; border: none; cursor: pointer;
+    font-size: 16px; color: #555; padding: 0 2px; line-height: 1;
+}
+.radio-close-btn:hover { color: #000; }
+.radio-url-bar { display: flex; gap: 4px; margin-bottom: 8px; }
+.radio-url-bar input {
+    flex: 1; font-family: 'Courier New', monospace; font-size: 12px;
+    padding: 3px 6px;
+    border: 1px solid #aaa; border-top-color: #777; border-left-color: #777;
+}
+.radio-status {
+    font-size: 14px; margin-bottom: 8px; min-height: 20px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 300px;
+}
+.radio-volume { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.radio-volume input[type=range] {
+    flex: 1; height: 16px; cursor: pointer;
+    -webkit-appearance: none; appearance: none;
+    background: #ccc;
+    border: 1px solid #aaa; border-top-color: #777; border-left-color: #777;
+}
+.radio-volume input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    background: #dfdfdf; border: 1px solid #000; cursor: pointer;
+}
+
+/* Panel de Estaciones — posicionado por JS con position:fixed */
+.station-panel {
+    position: fixed;
+    background-color: #ffffe1;
+    border: 1px solid #000; border-radius: 8px;
+    padding: 10px;
+    box-shadow: 2px 2px 0px rgba(0,0,0,0.4);
+    width: 240px; z-index: 1010;
+    font-family: 'TahomaXP', 'Tahoma', Arial, sans-serif;
+    font-size: 15px;
+}
+.station-panel-header {
+    font-size: 16px; font-weight: bold;
+    margin-bottom: 6px; padding-bottom: 5px;
+    border-bottom: 1px solid #e0e0c8;
+}
+.station-list { max-height: 200px; overflow-y: auto; margin-bottom: 4px; }
+.station-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 3px; cursor: pointer; border-radius: 3px;
+}
+.station-item:hover { background-color: #ffffc0; }
+.station-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.station-delete-btn {
+    background: none; border: none; cursor: pointer;
+    color: #aaa; font-size: 12px; padding: 0 3px;
+}
+.station-delete-btn:hover { color: #c00; }
+.station-separator { font-size: 11px; color: #aaa; text-align: center; margin: 5px 0; }
+.station-add-form {
+    display: flex; flex-direction: column; gap: 4px;
+    margin-top: 4px; margin-bottom: 2px;
+}
+.station-add-form input {
+    font-family: 'Courier New', monospace; font-size: 13px;
+    padding: 3px 6px; width: 100%;
+    border: 1px solid #aaa; border-top-color: #777; border-left-color: #777;
+}
+.station-form-btns { display: flex; gap: 4px; justify-content: flex-end; }
+
+/* =================================================================
+   SISTEMA DE PORTAPAPELES / NOTAS
+================================================================= */
+
+/* Panel de notas — más ancho que estaciones, crece en altura */
+.note-panel {
+    position: fixed;
+    background-color: #ffffe1;
+    border: 1px solid #000; border-radius: 8px;
+    padding: 10px;
+    box-shadow: 2px 2px 0px rgba(0,0,0,0.4);
+    width: 360px;
+    max-height: 520px;
+    z-index: 1010;
+    font-family: 'TahomaXP', 'Tahoma', Arial, sans-serif;
+    font-size: 14px;
+    display: flex; flex-direction: column;
+    gap: 6px;
+}
+.note-panel-header {
+    display: flex; align-items: center; gap: 4px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #e0e0c8;
+    flex-shrink: 0;
+}
+.note-title-input {
+    flex: 1; font-family: inherit; font-size: 14px; font-weight: bold;
+    border: none; background: transparent; outline: none; color: #000;
+    min-width: 0;
+}
+.note-title-input::placeholder { color: #bbb; font-weight: normal; }
+
+/* Viewer (modo lectura) */
+.nota-viewer {
+    flex: 1; overflow-y: auto;
+    min-height: 120px; max-height: 380px;
+    line-height: 1.55; font-size: 13px;
+    white-space: pre-wrap; word-break: break-word;
+}
+.nota-viewer p { margin: 2px 0; }
+.nota-viewer a { color: #0000cc; text-decoration: underline; }
+.nota-viewer a:hover { color: #0000aa; }
+.nota-img {
+    max-width: 100%; max-height: 280px; object-fit: contain;
+    border: 1px solid #ccc;
+    margin: 4px 0; display: block; border-radius: 3px;
+}
+.nota-img-placeholder {
+    background: #eee; padding: 5px 8px; font-size: 11px;
+    color: #999; margin: 4px 0; border-radius: 3px;
+}
+/* Encabezados en el viewer */
+.nota-viewer .nota-h1 { font-size: 18px; font-weight: bold; margin: 6px 0 2px 0; }
+.nota-viewer .nota-h2 { font-size: 15px; font-weight: bold; margin: 4px 0 2px 0; }
+
+/* Editor (modo escritura) */
+.nota-editor {
+    flex: 1; min-height: 180px; max-height: 380px;
+    resize: vertical;
+    font-family: 'Courier New', monospace; font-size: 12px;
+    padding: 6px; line-height: 1.5;
+    border: 1px solid #aaa; border-top-color: #777; border-left-color: #777;
+}
+.nota-editor::placeholder { color: #bbb; }
+
+/* Toolbar del note panel */
+.nota-toolbar {
+    display: flex; gap: 4px; justify-content: flex-end;
+    padding-top: 6px; border-top: 1px solid #e0e0c8;
+    flex-shrink: 0;
+}
+
+/* Lista de notas dentro de la burbuja principal */
+.nota-list {
+    max-height: 160px; overflow-y: auto; margin-bottom: 4px;
+}
+.nota-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 3px; cursor: pointer; border-radius: 3px;
+}
+.nota-item:hover { background-color: #ffffc0; }
+.nota-item.activa { background-color: #ffffa0; font-weight: bold; }
+.nota-titulo-preview {
+    flex: 1; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; font-size: 13px;
+}
+.nota-delete-btn {
+    background: none; border: none; cursor: pointer;
+    color: #aaa; font-size: 12px; padding: 0 3px;
+}
+.nota-delete-btn:hover { color: #c00; }
+
+/* =================================================================
+   BADGES DE CONTENIDO DE NOTA
+================================================================= */
+.nota-badges {
+    display: flex; gap: 4px; flex-wrap: wrap;
+    margin-bottom: 6px; padding-bottom: 5px;
+    border-bottom: 1px solid #e0e0c8;
+}
+.nota-badge {
+    font-size: 10px; padding: 1px 6px;
+    border: 1px solid #aaa;
+    border-top-color: #fff; border-left-color: #fff;
+    background: #dfdfdf; color: #333;
+    white-space: nowrap; cursor: default;
+}
+.badge-img   { border-color: #6a9; background: #d8ffe8; color: #1a6; }
+.badge-audio { border-color: #96a; background: #ecdeff; color: #60a; }
+.badge-link  { border-color: #69a; background: #d8eeff; color: #06a; }
+
+/* =================================================================
+   REPRODUCTOR RETRO PARA NOTAS — estilo XP armonizado
+================================================================= */
+.nota-player {
+    margin: 5px 0;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    /* Contenedor con borde inset clásico XP */
+    border: 1px solid #999;
+    border-top-color: #666; border-left-color: #666;
+    background: #fffff4;  /* ligeramente más claro que el panel */
+    padding: 5px 7px;
+    border-radius: 2px;
+}
+.nota-player-label {
+    font-size: 11px; color: #444;
+    margin-bottom: 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    border-bottom: 1px dotted #ccc;
+    padding-bottom: 2px;
+}
+/* Display de estado — área tipo LCD */
+.nota-player-display {
+    font-size: 11px; letter-spacing: 0.5px;
+    font-family: 'Courier New', monospace;
+    background: #ddeedd;
+    border: 1px solid #aaa;
+    border-top-color: #777; border-left-color: #777;
+    color: #224422;
+    padding: 2px 6px;
+    margin-bottom: 4px;
+    min-height: 16px;
+}
+.nota-player-display.nota-player-active {
+    background: #bbeecc;
+    color: #003300;
+    animation: nota-lcd-pulse 2s ease-in-out infinite;
+}
+@keyframes nota-lcd-pulse {
+    0%,100% { background: #bbeecc; }
+    50%      { background: #99ddaa; }
+}
+/* Fila de botones principales */
+.nota-player-controls {
+    display: flex; gap: 3px; margin-bottom: 3px;
+}
+/* Fila de volumen */
+.nota-player-volrow {
+    display: flex; align-items: center; gap: 3px;
+}
+.nota-player-vol {
+    flex: 1;
+    font-size: 10px; color: #335;
+    letter-spacing: 0;
+    white-space: nowrap;
+}
+/* Botones retro compactos — misma familia que clippy-btn pero mini */
+.nota-player-btn {
+    background: #dfdfdf;
+    border-top: 1px solid #fff;
+    border-left: 1px solid #fff;
+    border-bottom: 1px solid #777;
+    border-right: 1px solid #777;
+    outline: 1px solid #aaa;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    padding: 1px 7px;
+    cursor: pointer;
+    color: #000;
+    white-space: nowrap;
+    line-height: 1.3;
+}
+.nota-player-btn:hover { background: #efefef; }
+.nota-player-btn:active {
+    border-top-color: #777; border-left-color: #777;
+    border-bottom-color: #fff; border-right-color: #fff;
+    background: #ccc; padding: 2px 6px 0px 8px;
+}
+/* Botones +/- de volumen más cuadrados */
+.nota-player-vol-btn {
+    padding: 1px 5px;
+    font-weight: bold;
+}
+
+/* =================================================================
+   CONTROLES SAM TTS — Panel de Pruebas Físicas
+================================================================= */
+.sam-controls {
+    display: flex;
+    gap: 5px;
+    margin-top: 9px;
+    align-items: center;
+}
+
+/* Selector de emoción — estilo XP inset */
+.sam-select {
+    flex: 1;
+    font-family: 'TahomaXP', 'Tahoma', Arial, sans-serif;
+    font-size: 13px;
+    padding: 3px 4px;
+    border: 1px solid #aaa;
+    border-top-color: #777;
+    border-left-color: #777;
+    background: #fff;
+    color: #000;
+    cursor: pointer;
+    min-width: 0;
+}
+.sam-select:focus { outline: 1px dotted #000; }
+
+/* Botones Hablar / Parar */
+.sam-btn-hablar,
+.sam-btn-parar {
+    font-size: 13px;
+    padding: 3px 10px;
+    white-space: nowrap;
+}
+.sam-btn-hablar:disabled,
+.sam-btn-parar:disabled {
+    color: #999;
+    border-color: #ccc;
+    cursor: default;
+    background: #ebebeb;
+}
+
+/* Barra de estado SAM */
+.sam-status {
+    margin-top: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    min-height: 16px;
+    padding: 2px 5px;
+    border-radius: 2px;
+    color: #555;
+}
+.sam-status-loading {
+    background: #fff8dc;
+    color: #886600;
+    animation: sam-blink 0.8s step-end infinite;
+}
+.sam-status-playing {
+    background: #d8ffe8;
+    color: #005522;
+    border: 1px solid #8c8;
+    border-top-color: #4a4; border-left-color: #4a4;
+    animation: sam-pulse 1.2s ease-in-out infinite;
+}
+.sam-status-ok    { background: #eaffea; color: #2a6; }
+.sam-status-error { background: #ffe8e8; color: #c00; }
+.sam-status-warn  { background: #fff3cd; color: #856404; }
+
+@keyframes sam-blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.4; }
+}
+@keyframes sam-pulse {
+    0%, 100% { background: #d8ffe8; }
+    50%       { background: #b0f0c8; }
+}

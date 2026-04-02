@@ -1,0 +1,4 @@
+Error generando audio = exit status 53
+0009:err:module:import_dll Library chsdet.dll (which is needed by L"Z:\\app\\balcon.exe") not found
+0009:err:module:LdrInitializeThunk Importing dlls for L"Z:\\app\\balcon.exe" failed, status c0000135
+

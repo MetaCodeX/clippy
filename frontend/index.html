@@ -1,0 +1,1795 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Widget Clippy V50</title>
+    <!-- CACHE BUSTER V50 -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <link rel="stylesheet" href="styles.css?v=50">
+    <!-- Floating UI: popover posicionamiento robusto en cualquier cuadrante -->
+    <script type="module">
+        import {
+            computePosition, flip, shift, offset
+        } from 'https://cdn.jsdelivr.net/npm/@floating-ui/dom@1.7.5/+esm';
+        window.__floatingUI = { computePosition, flip, shift, offset };
+    </script>
+    <style>
+        /* === TIPOGRAFÍA EMOCIONAL CLIPPY AI === */
+        .clippy-h1 { font-family: 'Times New Roman', serif; font-size: 1.4em; font-weight: 900; color: #b00; margin-bottom: 6px; letter-spacing: -0.5px; line-height: 1.1; display: block; }
+        .clippy-bold { font-weight: 800; color: #111; }
+        .clippy-italic { font-style: italic; color: #555; }
+        .clippy-caps { text-shadow: 0px 0px 4px rgba(255,0,0,0.5); font-weight: bold; color: #900; }
+        
+        /* === BURBUJAS ACUMULADAS === */
+        .burbuja-dinamica { 
+            margin-bottom: 8px; 
+            padding-bottom: 6px; 
+            border-bottom: 1px dashed rgba(0,0,0,0.1); 
+            opacity: 0;
+            animation: fadeInBubble 0.4s forwards;
+            line-height: 1.35;
+        }
+        .burbuja-dinamica:last-child { border-bottom: none; margin-bottom: 0px; padding-bottom: 0px; }
+        
+        @keyframes fadeInBubble { to { opacity: 1; } }
+        
+        .pulse-text { animation: pulse 1s infinite alternate; color: #666; font-style: italic; }
+        @keyframes pulse { from{opacity:0.4} to{opacity:1} }
+        
+        /* === BOTONES DINÁMICOS === */
+        .btn-row-dynamic { display: flex; flex-direction: column; gap: 5px; width: 100%; margin-top: 8px; }
+        .clippy-btn.btn-ai { display: block; width: 100%; text-align: left; padding: 6px 8px!important; white-space: normal; line-height: 1.25; font-size: 0.85em; }
+        
+        /* === ESCRITURA LIBRE === */
+        .input-libre-container { display: flex; flex-direction: column; gap: 5px; width:100%; margin-top: 8px; }
+        .ai-free-input { flex: 1; min-width: 0; font-family: Tahoma, sans-serif; padding: 6px; font-size: 13px; border: 1px solid #7a9ac3; resize: vertical; min-height: 40px; }
+    </style>
+</head>
+<body>
+    
+    <div class="controls-panel">
+        <h3>Panel Pruebas Físicas</h3>
+        <textarea id="clippyInput" placeholder="Escribe texto y botones...
+
+Ejemplos de botones:
+[Aceptar] [Cancelar]
+[=Botón ancho completo]
+[Sí] [No]"></textarea>
+        <div class="panel-hint">
+            <code>[Texto]</code> auto &nbsp;·&nbsp;
+            <code>[=Texto]</code> ancho completo &nbsp;·&nbsp;
+            <code>~[Texto]</code> centrado<br>
+            Hasta 2 botones por línea separados con espacio
+        </div>
+        <!-- SAM TTS Controls (via SAPI4 TruVoice 1998 proxy) -->
+        <div class="sam-controls">
+            <button id="samHablarBtn" class="clippy-btn sam-btn-hablar" onclick="samHablar()">🔊 Hablar</button>
+            <button id="samPararBtn"  class="clippy-btn sam-btn-parar"  onclick="samParar()" disabled>⬛ Parar</button>
+        </div>
+        <div id="samStatus" class="sam-status"></div>
+    </div>
+
+    <!-- WIDGET INICIAL -->
+    <div class="clippy-wrapper pos-right" id="clippyWidget">
+        <!-- BURBUJA PRINCIPAL -->
+        <div class="clippy-bubble" id="clippyBubble">
+            <!-- MODO TEXTO (activo por defecto) -->
+            <div id="modoTexto">
+                <div id="clippyText">
+                    <p>Hola, ahora uso un "Modo Espejo" de 9 cuadrantes. Mi caja se moverá siempre al lado contrario absoluto en base al rincón de la pantalla al que me arrastres.</p>
+                </div>
+                <div class="clippy-actions" id="clippyActions">
+                    <div class="btn-row">
+                        <button class="clippy-btn">Opciones</button>
+                    </div>
+                </div>
+            </div>
+            <!-- MODO RADIO (oculto) -->
+            <div id="modoRadio" style="display:none">
+                <div class="radio-header">
+                    <span>Radio</span>
+                    <button class="radio-close-btn" onclick="cerrarModoRadio()">&#x2715;</button>
+                </div>
+                <div class="radio-url-bar">
+                    <input type="url" id="radioUrlInput" placeholder="URL del stream...">
+                    <button id="radioPlayBtn" class="clippy-btn" onclick="togglePlay()">|&gt;</button>
+                </div>
+                <div class="radio-status">
+                    <span id="radioStatusText">Sin reproducir</span>
+                </div>
+                <div class="radio-volume">
+                    <span>Vol.</span>
+                    <input type="range" id="radioVolume" min="0" max="100" value="80"
+                           oninput="ajustarVolumen(this.value)">
+                </div>
+                <button class="clippy-btn" onclick="toggleStationPanel()"
+                        style="margin-top:6px;width:100%;text-align:center">
+                    Estaciones
+                </button>
+            </div>
+            <!-- MODO PORTAPAPELES (oculto) — DENTRO del clippy-bubble -->
+            <div id="modoPortapapeles" style="display:none">
+                <div class="radio-header">
+                    <span>Notas</span>
+                    <button class="radio-close-btn" onclick="cerrarModoPortapapeles()">&#x2715;</button>
+                </div>
+                <div id="notaList" class="nota-list"></div>
+                <button class="clippy-btn" id="btnNuevaNota" onclick="nuevaNota()"
+                        style="margin-top:6px;width:100%;text-align:center">
+                    + Nueva nota
+                </button>
+            </div>
+        </div><!-- end clippy-bubble -->
+
+        <!-- AUDIO ELEMENTS (invisibles) -->
+        <audio id="radioAudio" preload="none"></audio>
+        <audio id="noteAudio"  preload="none"></audio>
+
+        <!-- CLIPPY CHARACTER -->
+        <div class="clippy-character" id="dragAnchor" title="Muéveme">
+            <img id="clippyImg" src="assets/gifs/idle_movimiento.gif" alt="Clippy">
+        </div>
+    </div> <!-- end clippy-wrapper -->
+
+
+    <!-- PANEL DE ESTACIONES — FUERA del wrapper para que position:fixed
+         sea relativo al VIEWPORT y no al ancestor con transform -->
+    <div id="stationPanel" class="station-panel" style="display:none">
+        <div class="station-panel-header">Estaciones</div>
+        <div id="stationList" class="station-list"></div>
+        <div id="stationAddForm" class="station-add-form" style="display:none">
+            <input id="stationNameInput" placeholder="Nombre...">
+            <input id="stationUrlInput" placeholder="URL del stream...">
+            <div class="station-form-btns">
+                <button class="clippy-btn btn-sm" onclick="guardarEstacion()">Guardar</button>
+                <button class="clippy-btn btn-sm" onclick="cancelarAgregar()">Cancelar</button>
+            </div>
+        </div>
+        <button class="clippy-btn" id="btnAgregarEstacion" onclick="mostrarFormAgregar()"
+                style="margin-top:6px;width:100%;text-align:center">
+            + Añadir estación
+        </button>
+    </div>
+
+    <!-- NOTE PANEL — fuera del wrapper (mismo patrón V51 que stationPanel) -->
+    <div id="notePanel" class="note-panel" style="display:none">
+        <div class="note-panel-header">
+            <input id="notaTituloInput" class="note-title-input" placeholder="Título de la nota...">
+            <button class="clippy-btn btn-sm" id="btnGuardarNota" onclick="guardarNota()">Guar.</button>
+            <button class="radio-close-btn" onclick="cerrarNotePanel()">&#x2715;</button>
+        </div>
+        <div id="notaViewer" class="nota-viewer"></div>
+        <textarea id="notaEditor" class="nota-editor" style="display:none"
+                  placeholder="COMANDOS:
+# Texto grande
+## Texto mediano
+
+![url]              imagen/gif 100%
+![url|50%]          imagen al 50%
+![url|200px|center] 200px centrada
+![url|100%|right]   a la derecha
+
+Links: URL, http, https, www → hyperlink
+Audio: .mp3 / stream → reproductor ASCII
+Radio: https://radio.xxx/stream.mp3"></textarea>
+        <div class="nota-toolbar">
+            <button class="clippy-btn btn-sm" id="btnToggleEditNota" onclick="toggleEditNota()">Editar</button>
+            <button class="clippy-btn btn-sm" onclick="eliminarNotaActual()"
+                    style="color:#c00;border-color:#c00">Eliminar</button>
+        </div>
+    </div>
+
+    <script>
+        // ======== BOTONES DE SISTEMA ========
+        const BOTONES_SISTEMA = {
+            'Radio':        () => activarModoRadio(),
+            'Portapapeles': () => activarModoPortapapeles(),
+            'Opciones':     () => console.log('[Sistema] Opciones - próximamente'),
+            'Musica':       () => console.log('[Sistema] Musica - próximamente'),
+            'Cerrar':       () => cerrarModoActivo(),
+        };
+
+        // ======== 1. MÓDULO DE FÍSICA (ESPEJO CLÁSICO) ========
+        const inputCaja    = document.getElementById('clippyInput');
+        const clippyBubble = document.getElementById('clippyBubble');
+        const widget       = document.getElementById('clippyWidget');
+        const stationPanelEl      = document.getElementById('stationPanel');
+        const notePanelEl          = document.getElementById('notePanel');
+        const modoPortapapelesDiv  = document.getElementById('modoPortapapeles');
+        const NOTA_KEY             = 'clippy_notas';
+        let notaActual = null, modoEditNota = false;
+
+        function reevaluarGeometria() {
+            let screenW = window.innerWidth, screenH = window.innerHeight;
+            let clipX = parseFloat(widget.style.left) || screenW / 2;
+            let clipY = parseFloat(widget.style.top)  || screenH / 2;
+            // margenX detecta bien izq/der; margenY muy pequeño = solo esquinas reales
+            let margenX = screenW * 0.28, margenY = screenH * 0.14;
+
+            let tocaIzquierda = clipX < margenX;
+            let tocaDerecha   = (screenW - clipX) < margenX;
+            let tocaArriba    = clipY < margenY;
+            let tocaAbajo     = (screenH - clipY) < margenY;
+            let nuevaGuia = 'right';
+
+            if      (tocaArriba && tocaIzquierda) nuevaGuia = 'bottom-right';
+            else if (tocaArriba && tocaDerecha)   nuevaGuia = 'bottom-left';
+            else if (tocaAbajo  && tocaIzquierda) nuevaGuia = 'top-right';
+            else if (tocaAbajo  && tocaDerecha)   nuevaGuia = 'top-left';
+            else if (tocaArriba)    nuevaGuia = 'bottom';
+            else if (tocaAbajo)     nuevaGuia = 'top';
+            else if (tocaIzquierda) nuevaGuia = 'right';
+            else if (tocaDerecha)   nuevaGuia = 'left';
+
+            widget.className = `clippy-wrapper pos-${nuevaGuia}`;
+            if (stationPanelEl.style.display !== 'none') posicionarStationPanel();
+            if (notePanelEl   && notePanelEl.style.display !== 'none') posicionarNotePanel();
+        }
+
+        // ====== TEXTO + BOTONES ======
+        const contenedorTexto = document.getElementById('clippyText');
+        const actionsDiv      = document.getElementById('clippyActions');
+
+        function parsearYRenderizar(valorInput) {
+            // ⚠️ No pisar el texto animado mientras el TTS está hablando
+            if (typeof samEstaHablando !== 'undefined' && samEstaHablando) return;
+            const lineas = valorInput.split('\n');
+            const lineasTexto = [], filasDeBtn = [];
+
+            for (const linea of lineas) {
+                const l = linea.trim();
+                if ((l.startsWith('[') || l.startsWith('~[')) && l.includes(']')) {
+                    const centrado = l.startsWith('~');
+                    const botones = [];
+                    const re = /\[([^\]]+)\]/g; let m;
+                    while ((m = re.exec(l)) !== null) {
+                        const c = m[1];
+                        if (c.startsWith('=')) botones.push({ texto: c.slice(1).trim(), full: true });
+                        else                   botones.push({ texto: c.trim(), full: false });
+                    }
+                    if (botones.length) filasDeBtn.push({ botones, centrado });
+                } else {
+                    lineasTexto.push(linea);
+                }
+            }
+
+            const textoJunto = lineasTexto.join('\n').trim();
+            if (!textoJunto) {
+                contenedorTexto.innerHTML = '<p>...</p>';
+            } else {
+                contenedorTexto.innerHTML = textoJunto.split(/\n{2,}/)
+                    .map(p => `<p>${p.trim().replace(/\n/g, '<br>')}</p>`).join('');
+            }
+
+            actionsDiv.innerHTML = '';
+            if (valorInput.trim() === '') {
+                const fila = document.createElement('div');
+                fila.className = 'btn-row';
+                const btn = document.createElement('button');
+                btn.className = 'clippy-btn'; btn.textContent = 'Opciones';
+                fila.appendChild(btn); actionsDiv.appendChild(fila);
+            } else if (filasDeBtn.length > 0) {
+                for (const { botones, centrado } of filasDeBtn) {
+                    const filaDiv = document.createElement('div');
+                    const tieneFull = botones.some(b => b.full);
+                    let clases = 'btn-row';
+                    if (tieneFull) clases += ' btn-row-full';
+                    if (centrado)  clases += ' btn-row-center';
+                    filaDiv.className = clases;
+                    for (const btn of botones) {
+                        const esSistema = BOTONES_SISTEMA.hasOwnProperty(btn.texto);
+                        const b = document.createElement('button');
+                        b.className = 'clippy-btn'
+                            + (btn.full ? ' btn-full' : '');
+                        b.textContent = btn.texto;
+                        if (esSistema) b.onclick = BOTONES_SISTEMA[btn.texto];
+                        filaDiv.appendChild(b);
+                    }
+                    actionsDiv.appendChild(filaDiv);
+                }
+            }
+        }
+
+        inputCaja.addEventListener('input', () => parsearYRenderizar(inputCaja.value));
+
+        // ======== 2. ARRASTRE ========
+        const ancla = document.getElementById('dragAnchor');
+        let isDragging = false, offsetX = 0, offsetY = 0;
+
+        ancla.addEventListener('mousedown', function(e) {
+            isDragging = true;
+            let rect = widget.getBoundingClientRect();
+            offsetX = e.clientX - rect.left - rect.width  / 2;
+            offsetY = e.clientY - rect.top  - rect.height / 2;
+            e.preventDefault();
+        });
+        document.addEventListener('mousemove', function(e) {
+            if (!isDragging) return;
+            let aW = window.innerWidth, aH = window.innerHeight;
+            let mc = 80;
+            let rX = Math.min(Math.max(e.clientX - offsetX, mc), aW - mc);
+            let rY = Math.min(Math.max(e.clientY - offsetY, mc), aH - mc);
+            widget.style.left = rX + 'px';
+            widget.style.top  = rY + 'px';
+            reevaluarGeometria();
+        });
+        document.addEventListener('mouseup', () => isDragging = false);
+
+        // ======== 3. MÓDULO RADIO ========
+        let modoActual = 'texto', radioReproduciendo = false;
+        const radioAudio   = document.getElementById('radioAudio');
+        const modoTextoDiv = document.getElementById('modoTexto');
+        const modoRadioDiv = document.getElementById('modoRadio');
+
+        function activarModoRadio() {
+            modoActual = 'radio';
+            modoTextoDiv.style.display = 'none';
+            modoRadioDiv.style.display = 'block';
+            const u = document.getElementById('radioUrlInput');
+            if (!u.value) u.value = 'https://radio.macrostasis.lat/stream.mp3';
+            radioAudio.volume = document.getElementById('radioVolume').value / 100;
+            renderizarEstaciones();
+        }
+        function cerrarModoRadio() {
+            modoActual = 'texto';
+            modoRadioDiv.style.display = 'none';
+            modoTextoDiv.style.display = 'block';
+            stationPanelEl.style.display = 'none';
+            // El audio sigue sonando en segundo plano
+        }
+        function cerrarModoActivo() {
+            if (modoActual === 'radio')        cerrarModoRadio();
+            if (modoActual === 'portapapeles') cerrarModoPortapapeles();
+        }
+
+        function togglePlay() {
+            if (radioReproduciendo) { detenerStream(); }
+            else {
+                const url = document.getElementById('radioUrlInput').value.trim();
+                if (url) reproducirStream(url, url);
+            }
+        }
+        function reproducirStream(url, nombre) {
+            const st = document.getElementById('radioStatusText');
+            const pb = document.getElementById('radioPlayBtn');
+            st.textContent = 'Conectando...';
+            // Clippy: animacion buscando mientras conecta
+            document.getElementById('clippyImg').src = 'assets/gifs/buscando_con_hoja.gif';
+            radioAudio.src = url;
+            radioAudio.play()
+                .then(() => {
+                    radioReproduciendo = true;
+                    pb.innerHTML = '||';
+                    const n = nombre.length > 35 ? nombre.slice(0,32)+'...' : nombre;
+                    st.textContent = '> ' + n;
+                    // Clippy anima: reproduciendo musica (audifonos)
+                    document.getElementById('clippyImg').src = 'assets/gifs/clippy_audifonos.gif';
+                })
+                .catch(err => {
+                    radioReproduciendo = false;
+                    st.textContent = 'Error al conectar';
+                    // Clippy vuelve a idle en error
+                    document.getElementById('clippyImg').src = 'assets/gifs/idle_movimiento.gif';
+                    console.warn('[Radio]', err);
+                });
+        }
+        function detenerStream() {
+            radioAudio.pause(); radioAudio.src = '';
+            radioReproduciendo = false;
+            document.getElementById('radioPlayBtn').innerHTML = '|&gt;';
+            document.getElementById('radioStatusText').textContent = 'Sin reproducir';
+            // Clippy vuelve a idle
+            document.getElementById('clippyImg').src = 'assets/gifs/idle_movimiento.gif';
+        }
+        function ajustarVolumen(val) { radioAudio.volume = val / 100; }
+
+        // ===== PANEL DE ESTACIONES =====
+        function toggleStationPanel() {
+            if (stationPanelEl.style.display === 'none') {
+                renderizarEstaciones();
+                stationPanelEl.style.display = 'block';
+                requestAnimationFrame(posicionarStationPanel);
+            } else {
+                stationPanelEl.style.display = 'none';
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // posicionarStationPanel — V51 SOLDADO A LA BURBUJA
+        //
+        // El panel de estaciones está FUERA del .clippy-wrapper en el DOM,
+        // por lo que position:fixed es relativo al VIEWPORT (sin distorsión
+        // por el transform:translate(-50%,-50%) del wrapper).
+        //
+        // REGLA: el panel se SUELDA al lado EXTERIOR de la burbuja de radio.
+        //   - Burbuja apunta derecha (*-right / right) → panel a la DERECHA de la burbuja
+        //   - Burbuja apunta izquierda (*-left / left)  → panel a la IZQUIERDA de la burbuja
+        //   - Burbuja centrada (top/bottom)             → lado con más espacio
+        //
+        // Resultado: burbuja y panel forman una unidad adyacente que se
+        // mueve junta. El panel NUNCA queda encima de la burbuja.
+        // ═══════════════════════════════════════════════════════════════
+        function posicionarStationPanel() {
+            const bRect = clippyBubble.getBoundingClientRect();
+            const wRect = widget.getBoundingClientRect();
+            const pW    = stationPanelEl.offsetWidth  || 240;
+            const pH    = stationPanelEl.offsetHeight || 280;
+            const GAP   = 8;
+            const vW    = window.innerWidth;
+            const vH    = window.innerHeight;
+
+            // Detectar dirección horizontal de la burbuja por la clase CSS
+            const pos         = widget.className.replace('clippy-wrapper pos-', '').trim();
+            const bubbleRight = (pos === 'right') || pos.endsWith('-right');
+            const bubbleLeft  = (pos === 'left' ) || pos.endsWith('-left');
+
+            // Panel va al lado EXTERIOR de la burbuja (mismo lado que apunta la burbuja)
+            let goRight;
+            if      (bubbleRight) goRight = true;
+            else if (bubbleLeft)  goRight = false;
+            else                  goRight = (wRect.left + wRect.width / 2) < vW / 2;
+
+            // ═══ Floating UI (prioridad si CDN cargó) ═══
+            const fu = window.__floatingUI;
+            if (fu) {
+                fu.computePosition(clippyBubble, stationPanelEl, {
+                    placement: (goRight ? 'right' : 'left') + '-start',
+                    strategy: 'fixed',
+                    middleware: [
+                        fu.offset(GAP),
+                        fu.flip({ padding: GAP }),
+                        fu.shift({ padding: GAP })
+                    ]
+                }).then(({ x, y }) => {
+                    Object.assign(stationPanelEl.style, {
+                        position: 'fixed',
+                        left:   `${Math.round(x)}px`,
+                        top:    `${Math.round(y)}px`,
+                        right: '', bottom: ''
+                    });
+                });
+                return;
+            }
+
+            // ═══ Fallback manual ═══
+            let left = goRight ? bRect.right + GAP : bRect.left - pW - GAP;
+            let top  = bRect.top; // alinear tope del panel con tope de la burbuja
+
+            // Anti-overflow horizontal
+            if (left + pW > vW - GAP) left = bRect.left - pW - GAP;
+            if (left < GAP)           left = bRect.right + GAP;
+            // Anti-overflow vertical
+            if (top + pH > vH - GAP)  top  = bRect.bottom - pH;
+            if (top < GAP)            top  = GAP;
+
+            left = Math.max(GAP, Math.min(left, vW - pW - GAP));
+            top  = Math.max(GAP, Math.min(top,  vH - pH - GAP));
+
+            Object.assign(stationPanelEl.style, {
+                position: 'fixed',
+                left: `${left}px`, top: `${top}px`,
+                right: '', bottom: ''
+            });
+        }
+
+        // ===== ESTACIONES =====
+        const ESTACIONES_PRESET = [
+            // --- Propia ---
+            { nombre: 'Macrostasis Radio',      url: 'https://radio.macrostasis.lat/stream.mp3' },
+            // --- SomaFM (verificadas, live 24/7) ---
+            { nombre: 'SomaFM: Groove Salad',   url: 'https://ice1.somafm.com/groovesalad-128-mp3' },
+            { nombre: 'SomaFM: Secret Agent',   url: 'https://ice1.somafm.com/secretagent-128-mp3' },
+            { nombre: 'SomaFM: Space Station',  url: 'https://ice5.somafm.com/spacestation-128-mp3' },
+            { nombre: 'SomaFM: Drone Zone',     url: 'https://ice1.somafm.com/dronezone-128-mp3' },
+            { nombre: 'SomaFM: DEF CON Radio',  url: 'https://ice1.somafm.com/defcon-128-mp3' },
+            { nombre: 'SomaFM: Underground 80s',url: 'https://ice6.somafm.com/u80s-128-mp3' },
+            { nombre: 'SomaFM: Indie Pop',      url: 'https://ice1.somafm.com/indiepop-128-mp3' },
+            { nombre: 'SomaFM: Beat Blender',   url: 'https://ice1.somafm.com/beatblender-128-mp3' },
+            { nombre: 'SomaFM: Lush',           url: 'https://ice1.somafm.com/lush-128-mp3' },
+            // --- Clasicas publicas ---
+            { nombre: 'Jazz 24',                url: 'http://live.jazz24.org:1480/jazz24' },
+            { nombre: 'SomaFM: Rockabilly',     url: 'https://ice6.somafm.com/rockabilly-128-mp3' },
+        ];
+        function cargarGuardadas() {
+            return JSON.parse(localStorage.getItem('clippy_radio_stations') || '[]');
+        }
+        function renderizarEstaciones() {
+            const lista = document.getElementById('stationList');
+            lista.innerHTML = '';
+            for (const e of ESTACIONES_PRESET)
+                lista.appendChild(crearItem(e.nombre, e.url, false, -1));
+            const guardadas = cargarGuardadas();
+            if (guardadas.length > 0) {
+                const sep = document.createElement('div');
+                sep.className = 'station-separator';
+                sep.textContent = '— Mis estaciones —';
+                lista.appendChild(sep);
+                guardadas.forEach((e, i) => lista.appendChild(crearItem(e.nombre, e.url, true, i)));
+            }
+        }
+        function crearItem(nombre, url, deletable, idx) {
+            const div = document.createElement('div');
+            div.className = 'station-item';
+            const span = document.createElement('span');
+            span.className = 'station-name'; span.textContent = nombre; span.title = url;
+            span.onclick = () => { document.getElementById('radioUrlInput').value = url; reproducirStream(url, nombre); };
+            div.appendChild(span);
+            if (deletable) {
+                const del = document.createElement('button');
+                del.className = 'station-delete-btn'; del.textContent = '✕';
+                del.onclick = e => { e.stopPropagation(); eliminarEstacion(idx); };
+                div.appendChild(del);
+            }
+            return div;
+        }
+        function mostrarFormAgregar() {
+            document.getElementById('stationAddForm').style.display = 'flex';
+            document.getElementById('btnAgregarEstacion').style.display = 'none';
+            posicionarStationPanel();
+        }
+        function cancelarAgregar() {
+            document.getElementById('stationAddForm').style.display = 'none';
+            document.getElementById('btnAgregarEstacion').style.display = '';
+            document.getElementById('stationNameInput').value = '';
+            document.getElementById('stationUrlInput').value = '';
+        }
+        function guardarEstacion() {
+            const n = document.getElementById('stationNameInput').value.trim();
+            const u = document.getElementById('stationUrlInput').value.trim();
+            if (!n || !u) return;
+            const g = cargarGuardadas(); g.push({ nombre: n, url: u });
+            localStorage.setItem('clippy_radio_stations', JSON.stringify(g));
+            cancelarAgregar(); renderizarEstaciones(); posicionarStationPanel();
+        }
+        function eliminarEstacion(idx) {
+            const g = cargarGuardadas(); g.splice(idx, 1);
+            localStorage.setItem('clippy_radio_stations', JSON.stringify(g));
+            renderizarEstaciones();
+        }
+
+        window.addEventListener('resize', reevaluarGeometria);
+        reevaluarGeometria();
+
+        // ======== 4. MÓDULO PORTAPAPELES / NOTAS ========
+        // (notePanelEl, modoPortapapelesDiv, NOTA_KEY, notaActual, modoEditNota
+        //  declarados arriba junto a los demás refs de DOM)
+
+        // ─── Persistencia ───
+        function cargarNotas() { return JSON.parse(localStorage.getItem(NOTA_KEY) || '[]'); }
+        function guardarNotasStorage(arr) { localStorage.setItem(NOTA_KEY, JSON.stringify(arr)); }
+        function generarId() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+
+        // ─── Animaciones de Clippy para el editor ───
+        const clippyImg       = document.getElementById('clippyImg');
+        const GIF_ESCRIBIENDO = 'assets/gifs/escribiendo_en_hoja.gif';
+        const GIF_GUARDANDO   = 'assets/gifs/guardando_hoja.gif';
+        const GIF_IDLE        = 'assets/gifs/idle_movimiento.gif';
+        const DUR_GUARDANDO   = 5530; // ms exactos de guardando_hoja.gif
+
+        // Entrar en modo escritura: loop de escribiendo_en_hoja
+        function animarEscribiendo() {
+            if (!clippyImg.src.endsWith(GIF_ESCRIBIENDO))
+                clippyImg.src = GIF_ESCRIBIENDO;
+        }
+
+        // Solo cuando se pulsa Guar.: reproducir guardando_hoja completo y volver a idle
+        // NO llamar desde otro lado que no sea guardarNota()
+        function animarGuardarYVolverIdle() {
+            // Forzar recarga del GIF desde el frame 0 seteando a '' primero
+            clippyImg.src = '';
+            requestAnimationFrame(() => {
+                clippyImg.src = GIF_GUARDANDO;
+                setTimeout(() => { clippyImg.src = GIF_IDLE; }, DUR_GUARDANDO);
+            });
+        }
+
+        // Volver al idle limpiamente
+        function animarIdle() { clippyImg.src = GIF_IDLE; }
+
+
+        // ─── Activar / cerrar modo ───
+        function activarModoPortapapeles() {
+            modoActual = 'portapapeles';
+            modoTextoDiv.style.display      = 'none';
+            modoRadioDiv.style.display      = 'none';
+            modoPortapapelesDiv.style.display = 'block';
+            renderizarNotaLista();
+        }
+        function cerrarModoPortapapeles() {
+            detenerNotaAudio();   // ← detener audio al cerrar portapapeles
+            modoActual = 'texto';
+            modoPortapapelesDiv.style.display = 'none';
+            modoTextoDiv.style.display        = 'block';
+            notePanelEl.style.display         = 'none';
+            notaActual = null;
+            animarIdle();
+        }
+        function cerrarNotePanel() {
+            // Audio sigue sonando — el usuario lo detiene manualmente
+            notePanelEl.style.display = 'none';
+            notaActual = null;
+            animarIdle();
+            renderizarNotaLista();
+        }
+
+        // ─── Lista de notas en la burbuja ───
+        function renderizarNotaLista() {
+            const lista = document.getElementById('notaList');
+            lista.innerHTML = '';
+            const notas = cargarNotas();
+            if (!notas.length) {
+                const v = document.createElement('div');
+                v.style.cssText = 'font-size:12px;color:#999;text-align:center;padding:8px;';
+                v.textContent = 'No hay notas aún. Crea la primera.';
+                lista.appendChild(v); return;
+            }
+            for (const n of notas) {
+                const div  = document.createElement('div');
+                div.className = 'nota-item' + (notaActual && notaActual.id === n.id ? ' activa' : '');
+                const span = document.createElement('span');
+                span.className   = 'nota-titulo-preview';
+                span.textContent = n.titulo || 'Sin título';
+                span.title       = n.contenido.slice(0, 100);
+                span.onclick     = () => abrirNota(n);
+                const del        = document.createElement('button');
+                del.className    = 'nota-delete-btn'; del.textContent = '✕';
+                del.onclick      = e => { e.stopPropagation(); eliminarNota(n.id); };
+                div.appendChild(span); div.appendChild(del);
+                lista.appendChild(div);
+            }
+        }
+
+        // ─── Abrir nota existente ───
+        function abrirNota(nota) {
+            notaActual = nota; modoEditNota = false;
+            document.getElementById('notaTituloInput').value  = nota.titulo || '';
+            document.getElementById('notaViewer').style.display = 'block';
+            document.getElementById('notaEditor').style.display = 'none';
+            document.getElementById('btnToggleEditNota').textContent = 'Editar';
+            mostrarViewer(nota);
+            notePanelEl.style.display = 'flex';
+            requestAnimationFrame(posicionarNotePanel);
+            renderizarNotaLista();
+        }
+
+        // ─── Crear nota nueva ───
+        function nuevaNota() {
+            const n = { id: generarId(), titulo: '', contenido: '', imagenes: {}, creado: Date.now(), editado: Date.now() };
+            const arr = cargarNotas(); arr.unshift(n); guardarNotasStorage(arr);
+            notaActual = n; modoEditNota = true;
+            document.getElementById('notaTituloInput').value     = '';
+            document.getElementById('notaEditor').value          = '';
+            document.getElementById('notaViewer').style.display  = 'none';
+            document.getElementById('notaEditor').style.display  = 'block';
+            document.getElementById('btnToggleEditNota').textContent = 'Ver';
+            document.getElementById('notaViewer').innerHTML = '';
+            notePanelEl.style.display = 'flex';
+            requestAnimationFrame(posicionarNotePanel);
+            renderizarNotaLista();
+            document.getElementById('notaEditor').focus();
+            animarEscribiendo();
+        }
+
+        // ─── Toggle edición ───
+        function toggleEditNota() {
+            if (!notaActual) return;
+            modoEditNota = !modoEditNota;
+            if (modoEditNota) {
+                document.getElementById('notaEditor').value          = notaActual.contenido;
+                document.getElementById('notaViewer').style.display  = 'none';
+                document.getElementById('notaEditor').style.display  = 'block';
+                document.getElementById('btnToggleEditNota').textContent = 'Ver';
+                animarEscribiendo();
+            } else {
+                // Salir de edición → guardar + idle (sin animación de guardado)
+                notaActual.contenido = document.getElementById('notaEditor').value;
+                notaActual.titulo    = document.getElementById('notaTituloInput').value.trim() || 'Sin título';
+                notaActual.editado   = Date.now();
+                const arr = cargarNotas().map(x => x.id === notaActual.id ? notaActual : x);
+                guardarNotasStorage(arr);
+                document.getElementById('notaViewer').style.display  = 'block';
+                document.getElementById('notaEditor').style.display  = 'none';
+                document.getElementById('btnToggleEditNota').textContent = 'Editar';
+                mostrarViewer(notaActual);
+                renderizarNotaLista();
+                animarIdle();
+            }
+        }
+
+        // ─── Guardar ───
+        function guardarNota() {
+            if (!notaActual) return;
+            if (modoEditNota) notaActual.contenido = document.getElementById('notaEditor').value;
+            notaActual.titulo  = document.getElementById('notaTituloInput').value.trim() || 'Sin título';
+            notaActual.editado = Date.now();
+            const arr = cargarNotas().map(x => x.id === notaActual.id ? notaActual : x);
+            guardarNotasStorage(arr);
+            renderizarNotaLista();
+            const btn = document.getElementById('btnGuardarNota');
+            btn.textContent = 'OK'; setTimeout(() => btn.textContent = 'Guar.', 900);
+            // Animación: guardando_hoja completo (5.53s) → idle
+            animarGuardarYVolverIdle();
+        }
+
+        // ─── Eliminar ───
+        function eliminarNota(id) {
+            guardarNotasStorage(cargarNotas().filter(x => x.id !== id));
+            if (notaActual && notaActual.id === id) { notaActual = null; notePanelEl.style.display = 'none'; }
+            renderizarNotaLista();
+        }
+        function eliminarNotaActual() { if (notaActual) eliminarNota(notaActual.id); }
+
+        // ─── Renderer de contenido ───
+        // URL: http/https y también www. sin protocolo
+        const RX_URL   = /((?:https?:\/\/|www\.)[^\s<>"]+)/gi;
+        const RX_IMG   = /\.(png|jpe?g|gif|webp|svg|bmp)(\?[^\s]*)?$/i;
+        // Audio: extensiones conocidas O /stream en la ruta (radio streams)
+        const RX_AUDIO = /\.(mp3|ogg|wav|aac|flac|m4a|opus)(\?[^\s]*)?$|(\/stream(?:[.\-\/\w]*)|stream\.mp3)/i;
+
+        // ─── Audio DOM element para notas (mismo patrón que radioAudio) ───
+        let notaAudio     = null;   // referencia al reproductor activo de notas
+        const noteAudioEl = document.getElementById('noteAudio');
+        function detenerNotaAudio() {
+            noteAudioEl.pause();
+            noteAudioEl.src = '';
+            notaAudio = null;
+        }
+
+        // ─── Normalizar URL (añadir https:// a los www.) ───
+        function normalizarUrl(url) {
+            if (/^www\./i.test(url)) return 'https://' + url;
+            return url;
+        }
+
+        async function mostrarViewer(nota) {
+            const viewer = document.getElementById('notaViewer');
+            viewer.innerHTML = '';
+            detenerNotaAudio(); // limpiar audio previo al abrir nueva nota
+
+            const lineas = nota.contenido.split('\n');
+            let tieneImagen = false, tieneAudio = false, tieneLinks = false;
+
+            for (const linea of lineas) {
+                const tr = linea.trim();
+
+                // ══ COMANDO: ![url|tamaño|alin] ══
+                const imgCmd = tr.match(/^!\[([^\]|]+?)(?:\|([^\]|]*))?(?:\|([^\]]*))?\]$/);
+                if (imgCmd) {
+                    tieneImagen = true;
+                    renderImgConEstilo(viewer,
+                        imgCmd[1].trim(),
+                        (imgCmd[2] || '').trim() || '100%',
+                        (imgCmd[3] || '').trim() || 'left');
+                    continue;
+                }
+
+                // ══ ENCABEZADOS # y ## ══
+                if (tr.startsWith('## ')) {
+                    const h = document.createElement('p');
+                    h.className = 'nota-h2'; h.textContent = tr.slice(3);
+                    viewer.appendChild(h); continue;
+                }
+                if (tr.startsWith('# ')) {
+                    const h = document.createElement('p');
+                    h.className = 'nota-h1'; h.textContent = tr.slice(2);
+                    viewer.appendChild(h); continue;
+                }
+
+                // ══ URL de imagen en línea sola (auto-detección, incluye .gif) ══
+                RX_IMG.lastIndex = 0; RX_URL.lastIndex = 0;
+                if (RX_IMG.test(tr) && RX_URL.test(tr)) {
+                    tieneImagen = true;
+                    await renderImgNota(viewer, normalizarUrl(tr), nota); continue;
+                }
+                // ══ URL de audio en línea sola (extensiones + /stream) ══
+                RX_AUDIO.lastIndex = 0; RX_URL.lastIndex = 0;
+                if (RX_AUDIO.test(tr) && RX_URL.test(tr)) {
+                    tieneAudio = true;
+                    renderAudioNota(viewer, normalizarUrl(tr)); continue;
+                }
+                // ══ Línea mixta con posibles URLs ══
+                const p = document.createElement('p');
+                p.style.margin = '2px 0';
+                RX_URL.lastIndex = 0;
+                if (RX_URL.test(linea)) {
+                    tieneLinks = true;
+                    RX_URL.lastIndex = 0;
+                    const partes = linea.split(RX_URL);
+                    for (const parte of partes) {
+                        RX_URL.lastIndex = 0;
+                        if (RX_URL.test(parte)) {
+                            const href = normalizarUrl(parte);
+                            const a = document.createElement('a');
+                            a.href = href; a.textContent = parte;
+                            a.target = '_blank'; a.rel = 'noopener noreferrer';
+                            p.appendChild(a);
+                        } else { p.appendChild(document.createTextNode(parte)); }
+                    }
+                } else {
+                    p.textContent = linea || '\u00a0';
+                }
+                viewer.appendChild(p);
+            }
+
+            // ── Badges de contenido al pie ──
+            if (tieneImagen || tieneAudio || tieneLinks) {
+                const badges = document.createElement('div');
+                badges.className = 'nota-badges';
+                if (tieneImagen) badges.innerHTML += '<span class="nota-badge badge-img">&#9654; Imagen/GIF</span>';
+                if (tieneAudio)  badges.innerHTML += '<span class="nota-badge badge-audio">&#9835; Audio</span>';
+                if (tieneLinks)  badges.innerHTML += '<span class="nota-badge badge-link">&#128279; Link</span>';
+                viewer.insertBefore(badges, viewer.firstChild);
+            }
+
+            posicionarNotePanel();
+        }
+
+        // ══ Imagen con tamaño y alineación (comando ![]) ══
+        function renderImgConEstilo(viewer, url, size, align) {
+            if (/^\d+$/.test(size)) size = size + 'px'; // solo números → añadir px
+            const textAlign = align === 'center' ? 'center'
+                            : align === 'right'  ? 'right' : 'left';
+
+            const ph = document.createElement('div');
+            ph.className = 'nota-img-placeholder'; ph.textContent = 'Cargando...';
+            viewer.appendChild(ph);
+
+            const wrapper = document.createElement('div');
+            wrapper.style.cssText = `text-align:${textAlign};margin:4px 0;`;
+
+            const img = document.createElement('img');
+            img.className = 'nota-img';
+            img.style.width = size; img.style.maxWidth = '100%';
+            img.style.maxHeight = '400px'; img.style.display = 'inline-block';
+            img.style.objectFit = 'contain';
+            img.alt = url.split('/').pop().slice(0, 40);
+            img.onload  = () => { wrapper.appendChild(img); ph.replaceWith(wrapper); posicionarNotePanel(); };
+            img.onerror = () => { const a = document.createElement('a'); a.href = url; a.textContent = url; a.target = '_blank'; ph.replaceWith(a); };
+            img.src = url;
+        }
+
+
+        async function renderImgNota(viewer, url, nota) {
+            // Mostrar imagen con img.src directo — el browser carga cross-origin
+            // sin CORS para display (solo JS pixel-access está restringido)
+            const ph = document.createElement('div');
+            ph.className = 'nota-img-placeholder';
+            ph.textContent = 'Cargando imagen...';
+            viewer.appendChild(ph);
+
+            const img = document.createElement('img');
+            img.className = 'nota-img';
+            img.alt = url.split('/').pop().slice(0, 40);
+            img.onload  = () => { ph.replaceWith(img); posicionarNotePanel(); };
+            img.onerror = () => {
+                const a = document.createElement('a');
+                a.href = url; a.textContent = url; a.target = '_blank';
+                ph.replaceWith(a);
+            };
+            img.src = url;
+        }
+
+        // ══ Reproductor ASCII retro para notas (usa noteAudioEl = DOM elemén estable) ══
+        function renderAudioNota(viewer, url) {
+            const nombre   = url.split('/').pop().split('?')[0].slice(0, 44) || 'stream';
+            const isStream = /\/stream|\.mp3$|radio/i.test(url);
+
+            const w = document.createElement('div');
+            w.className = 'nota-player';
+
+            // Cabecera
+            const lbl = document.createElement('div');
+            lbl.className   = 'nota-player-label';
+            lbl.textContent = (isStream ? '\u266B Radio: ' : '\u266A ') + nombre;
+            w.appendChild(lbl);
+
+            // Display de estado (tipo LCD)
+            const display = document.createElement('div');
+            display.className   = 'nota-player-display';
+            display.textContent = '\u25A0 STOP';
+
+            // Barra de volumen
+            let volPct = Math.round(noteAudioEl.volume * 100) || 80;
+            const volBar = document.createElement('div');
+            volBar.className = 'nota-player-vol';
+            function renderVolBar() {
+                const f = Math.round(volPct / 10);
+                volBar.textContent = 'VOL [' + '\u2588'.repeat(f) + '\u00B7'.repeat(10 - f) + '] ' + volPct + '%';
+            }
+            renderVolBar();
+
+            let playing = false;
+
+            // —— Eventos nativos del elemento de audio compartido ——
+            // Se crean como closures pero se limpian al detener/destruir
+            function onPlaying() {
+                playing = true;
+                btnPlay.textContent  = isStream ? '\u23F8 PAUSA' : '\u23F8 PAUSA';
+                display.textContent  = isStream ? '\u25CF ON AIR' : '\u25BA PLAY';
+                display.classList.add('nota-player-active');
+            }
+            function onPause() {
+                btnPlay.textContent = isStream ? '\u25BA RADIO' : '\u25BA PLAY';
+                display.textContent = '\u23F8 PAUSA';
+                display.classList.remove('nota-player-active');
+                playing = false;
+            }
+            function onError() {
+                const code = noteAudioEl.error ? noteAudioEl.error.code : '?';
+                display.textContent = '\u26A0 Error (' + code + ')';
+                display.classList.remove('nota-player-active');
+                playing = false; notaAudio = null;
+                btnPlay.textContent = isStream ? '\u25BA RADIO' : '\u25BA PLAY';
+            }
+
+            function attachEvents() {
+                noteAudioEl.addEventListener('playing', onPlaying);
+                noteAudioEl.addEventListener('pause',   onPause);
+                noteAudioEl.addEventListener('error',   onError);
+            }
+            function detachEvents() {
+                noteAudioEl.removeEventListener('playing', onPlaying);
+                noteAudioEl.removeEventListener('pause',   onPause);
+                noteAudioEl.removeEventListener('error',   onError);
+            }
+
+            function startPlay() {
+                // Si otro reproductor nativo de notas estaba activo, limpiarlo
+                if (notaAudio && notaAudio !== noteAudioEl) { notaAudio.pause(); notaAudio.src = ''; }
+                detachEvents(); // quitar listeners viejos si los hay
+                attachEvents();
+                notaAudio = noteAudioEl;
+                noteAudioEl.volume = volPct / 100;
+                noteAudioEl.src    = url;  // mismo patrón que radioAudio: solo src + play()
+                display.textContent = '\u231B CONECTANDO...';
+                display.classList.add('nota-player-active');
+                noteAudioEl.play().catch(err => {
+                    display.textContent = '\u26A0 ' + (err.name || err.message || 'Error');
+                    display.classList.remove('nota-player-active');
+                    playing = false; notaAudio = null;
+                    btnPlay.textContent = isStream ? '\u25BA RADIO' : '\u25BA PLAY';
+                });
+            }
+
+            function stopPlay() {
+                detachEvents();
+                noteAudioEl.pause();
+                playing = false;
+                display.textContent = '\u25A0 STOP';
+                display.classList.remove('nota-player-active');
+                btnPlay.textContent = isStream ? '\u25BA RADIO' : '\u25BA PLAY';
+            }
+
+            const btnPlay = document.createElement('button');
+            btnPlay.className   = 'nota-player-btn';
+            btnPlay.textContent = isStream ? '\u25BA RADIO' : '\u25BA PLAY';
+            btnPlay.onclick     = () => { if (playing) stopPlay(); else startPlay(); };
+
+            const btnStop = document.createElement('button');
+            btnStop.className   = 'nota-player-btn';
+            btnStop.textContent = '\u25A0 STOP';
+            btnStop.onclick     = () => { stopPlay(); noteAudioEl.src = ''; notaAudio = null; };
+
+            const btnVolM = document.createElement('button');
+            btnVolM.className   = 'nota-player-btn nota-player-vol-btn';
+            btnVolM.textContent = '-';
+            btnVolM.title       = 'Bajar volumen';
+            btnVolM.onclick     = () => { volPct = Math.max(0, volPct-10); renderVolBar(); noteAudioEl.volume = volPct/100; };
+
+            const btnVolP = document.createElement('button');
+            btnVolP.className   = 'nota-player-btn nota-player-vol-btn';
+            btnVolP.textContent = '+';
+            btnVolP.title       = 'Subir volumen';
+            btnVolP.onclick     = () => { volPct = Math.min(100, volPct+10); renderVolBar(); noteAudioEl.volume = volPct/100; };
+
+            const ctrlRow = document.createElement('div');
+            ctrlRow.className = 'nota-player-controls';
+            ctrlRow.appendChild(btnPlay);
+            ctrlRow.appendChild(btnStop);
+
+            const volRow = document.createElement('div');
+            volRow.className = 'nota-player-volrow';
+            volRow.appendChild(btnVolM);
+            volRow.appendChild(volBar);
+            volRow.appendChild(btnVolP);
+
+            w.appendChild(display);
+            w.appendChild(ctrlRow);
+            w.appendChild(volRow);
+            viewer.appendChild(w);
+        }
+
+        // ─── Posicionador V51 (idéntico al de estaciones, clippyBubble como ancla) ───
+        function posicionarNotePanel() {
+            if (!notePanelEl || notePanelEl.style.display === 'none') return;
+            const bRect = clippyBubble.getBoundingClientRect();
+            const wRect = widget.getBoundingClientRect();
+            const pW = notePanelEl.offsetWidth  || 380;
+            const pH = notePanelEl.offsetHeight || 440;
+            const GAP = 8, vW = window.innerWidth, vH = window.innerHeight;
+
+            const pos         = widget.className.replace('clippy-wrapper pos-', '').trim();
+            const bubbleRight = pos === 'right' || pos.endsWith('-right');
+            const bubbleLeft  = pos === 'left'  || pos.endsWith('-left');
+            let goRight;
+            if      (bubbleRight) goRight = true;
+            else if (bubbleLeft)  goRight = false;
+            else                  goRight = (wRect.left + wRect.width / 2) < vW / 2;
+
+            const fu = window.__floatingUI;
+            if (fu) {
+                // ⚠️ NUNCA ir al lado interior (entre Clippy y la burbuja).
+                // Si no hay espacio exterior → arriba o abajo de la burbuja.
+                const outerPlacement = (goRight ? 'right' : 'left') + '-start';
+                const outerAlt       = (goRight ? 'right' : 'left') + '-end';
+                // NO incluir el lado interior ('left-*' si goRight, 'right-*' si goLeft)
+                const fallbacks = [ outerAlt, 'bottom-start', 'bottom-end', 'top-start', 'top-end' ];
+                fu.computePosition(clippyBubble, notePanelEl, {
+                    placement: outerPlacement,
+                    strategy: 'fixed',
+                    middleware: [
+                        fu.offset(GAP),
+                        fu.flip({ padding: GAP, fallbackPlacements: fallbacks }),
+                        fu.shift({ padding: GAP })
+                    ]
+                }).then(({ x, y }) => {
+                    Object.assign(notePanelEl.style, {
+                        position: 'fixed',
+                        left: `${Math.round(x)}px`, top: `${Math.round(y)}px`,
+                        right: '', bottom: ''
+                    });
+                });
+                return;
+            }
+
+            // — Fallback manual (sin Floating UI) —
+            // Regla: si no cabe en el lado EXTERIOR, ir abajo/arriba, NUNCA al interior
+            let left, top;
+            const exteriorLeft  = bRect.left  - pW - GAP;  // panel a la izq de burbuja
+            const exteriorRight = bRect.right  + GAP;        // panel a la der de burbuja
+            const cabeRight = exteriorRight + pW <= vW - GAP;
+            const cabeLeft  = exteriorLeft  >= GAP;
+
+            if (goRight && cabeRight) {
+                left = exteriorRight; top = bRect.top;
+            } else if (!goRight && cabeLeft) {
+                left = exteriorLeft;  top = bRect.top;
+            } else {
+                // No cabe en el exterior → ir DEBAJO de la burbuja (o arriba si tampoco hay)
+                left = Math.max(GAP, Math.min(bRect.left, vW - pW - GAP));
+                top  = bRect.bottom + GAP;
+                if (top + pH > vH - GAP) top = Math.max(GAP, bRect.top - pH - GAP);
+            }
+
+            left = Math.max(GAP, Math.min(left, vW - pW - GAP));
+            top  = Math.max(GAP, Math.min(top,  vH - pH - GAP));
+            Object.assign(notePanelEl.style, { position: 'fixed', left: `${left}px`, top: `${top}px`, right: '', bottom: '' });
+        }
+
+
+        // ======================================================
+        // MÓDULO SAM TTS — Sincronización carácter por carácter
+        // ======================================================
+        //
+        // Flujo:
+        //   1. fetch('/habla?texto=...&emocion=...') → ArrayBuffer (WAV)
+        //   2. AudioContext.decodeAudioData()  → duración exacta en segundos
+        //   3. Se crea Blob URL y se reproduce el audio
+        //   4. Simultaneamente: animación char-by-char distribuida en esa duración
+        //   5. Clippy anima hablando → vuelve a idle al terminar
+        // ======================================================
+
+        let samAudioCtx      = null;  // AudioContext persistente
+        let samSourceNode    = null;  // BufferSourceNode activo
+        let samAnimTimer     = null;  // clearTimeout handle
+        let samAnimTimers    = [];    // array de setTimeout ids
+        let samEstaHablando  = false;
+        let samBlobUrl       = null;  // URL del blob actual
+
+        // GIF dedicado para hablar (reutilizamos escribiendo como fallback si no existe hablar)
+        const GIF_HABLANDO = 'assets/gifs/escribiendo_en_hoja.gif';
+
+        function samGetAudioCtx() {
+            if (!samAudioCtx || samAudioCtx.state === 'closed') {
+                samAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            // Resume si está suspendido (política autoplay)
+            if (samAudioCtx.state === 'suspended') samAudioCtx.resume();
+            return samAudioCtx;
+        }
+
+        function samSetStatus(msg, tipo) {
+            const el = document.getElementById('samStatus');
+            el.textContent = msg;
+            el.className = 'sam-status' + (tipo ? ' sam-status-' + tipo : '');
+        }
+
+        function samSetBotones(hablando) {
+            document.getElementById('samHablarBtn').disabled = hablando;
+            document.getElementById('samPararBtn').disabled  = !hablando;
+        }
+
+        async function samHablar() {
+            const textarea = document.getElementById('clippyInput');
+
+            // Extraer solo líneas de texto (sin líneas de botones)
+            const lineas = textarea.value.split('\n');
+            const soloTexto = lineas
+                .filter(l => {
+                    const tr = l.trim();
+                    return !((tr.startsWith('[') || tr.startsWith('~[')) && tr.includes(']'));
+                })
+                .join(' ')
+                .trim();
+
+            if (!soloTexto) {
+                samSetStatus('⚠ Escribe algún texto primero', 'warn');
+                return;
+            }
+
+            samParar(false);
+            samEstaHablando = true;
+            samSetBotones(true);
+            samSetStatus('⏳ Generando voz... (TruVoice 1998)', 'loading');
+
+            // ── Fetch → decode ONCE → duración + buffer de reproducción ──
+            // Una sola llamada a decodeAudioData: evita buffer detached y
+            // garantiza que duracionMs viene del audio real, no de un header.
+            let audioBuffer, duracionMs;
+            try {
+                const fetchUrl = `/habla?texto=${encodeURIComponent(soloTexto)}`;
+                const resp = await fetch(fetchUrl);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+                const wavArrayBuffer = await resp.arrayBuffer();
+                const ctx = samGetAudioCtx();
+                // decodeAudioData transfiere (detach) el buffer — por eso solo se llama UNA vez
+                audioBuffer = await ctx.decodeAudioData(wavArrayBuffer);
+                duracionMs  = Math.round(audioBuffer.duration * 1000);
+            } catch (err) {
+                samSetStatus('✗ Error: ' + err.message, 'error');
+                samEstaHablando = false;
+                samSetBotones(false);
+                return;
+            }
+
+            samSetStatus(`▶ ${(duracionMs/1000).toFixed(2)}s | TruVoice`, 'playing');
+
+            // ── Reproducir ──
+            try {
+                const ctx = samGetAudioCtx();
+                if (samSourceNode) {
+                    try { samSourceNode.stop(); } catch(e) {}
+                    samSourceNode.disconnect();
+                }
+                samSourceNode = ctx.createBufferSource();
+                samSourceNode.buffer = audioBuffer;
+                samSourceNode.connect(ctx.destination);
+                samSourceNode.start(0);
+                samSourceNode.onended = () => {
+                    if (samEstaHablando) samLimpiarFin();
+                };
+            } catch (err) {
+                samSetStatus('✗ Error al reproducir: ' + err.message, 'error');
+                samEstaHablando = false;
+                samSetBotones(false);
+                return;
+            }
+
+            // ── Animación char-by-char sincronizada con la duración real ──
+            samAnimarTextoCharByChar(soloTexto, duracionMs);
+            clippyImg.src = GIF_HABLANDO;
+        }
+
+        function samAnimarTextoCharByChar(texto, duracionMs) {
+            // Limpiar timers anteriores
+            samAnimTimers.forEach(t => clearTimeout(t));
+            samAnimTimers = [];
+
+            const chars = texto.split('');
+            const total = chars.length;
+            if (total === 0) return;
+
+            // Distribución uniforme: 98% del tiempo para los chars, 2% de colchón final
+            const tiempoUtil = duracionMs * 0.98;
+            const intervalo  = tiempoUtil / total;
+
+            // Crear el contenedor vivo en la burbuja
+            contenedorTexto.innerHTML = '<p id="samTextoVivo"></p>';
+
+            // acumulado como array para evitar mutaciones por closure
+            const acumulado = [];
+
+            // ━━ Helper: obtener o recrear el párrafo vivo ━━
+            // Necesario porque parsearYRenderizar puede destruir el nodo
+            // si el usuario interactúa con el textarea durante la reproducción.
+            function getParrafoVivo() {
+                let p = document.getElementById('samTextoVivo');
+                if (!p) {
+                    // El nodo fue destruido — lo recreamos en su contenedor
+                    contenedorTexto.innerHTML = '<p id="samTextoVivo"></p>';
+                    p = document.getElementById('samTextoVivo');
+                }
+                return p;
+            }
+
+            for (let i = 0; i < total; i++) {
+                const delay = Math.round(i * intervalo);
+                const char  = chars[i];
+                const tid = setTimeout(() => {
+                    acumulado.push(char);
+                    const txt = acumulado.join('')
+                        .replace(/&/g,'&amp;')
+                        .replace(/</g,'&lt;')
+                        .replace(/>/g,'&gt;')
+                        .replace(/\n/g,'<br>');
+                    getParrafoVivo().innerHTML = txt;
+                }, delay);
+                samAnimTimers.push(tid);
+            }
+
+            // Tick final — garantiza que el texto quede completo
+            const tidFin = setTimeout(() => {
+                const txt = texto
+                    .replace(/&/g,'&amp;')
+                    .replace(/</g,'&lt;')
+                    .replace(/>/g,'&gt;')
+                    .replace(/\n/g,'<br>');
+                getParrafoVivo().innerHTML = txt;
+            }, Math.round(tiempoUtil + 80));
+            samAnimTimers.push(tidFin);
+        }
+
+        function samParar(volverIdle) {
+            // Detener audio
+            if (samSourceNode) {
+                try { samSourceNode.stop(); } catch(e) {}
+                samSourceNode.disconnect();
+                samSourceNode = null;
+            }
+            // Cancelar animación de texto
+            samAnimTimers.forEach(t => clearTimeout(t));
+            samAnimTimers = [];
+
+            samEstaHablando = false;
+            samSetBotones(false);
+
+            // Si volverIdle no es explícitamente false, volver a idle
+            if (volverIdle !== false) {
+                samSetStatus('⬛ Detenido', '');
+                clippyImg.src = GIF_IDLE;
+            }
+        }
+
+        function samLimpiarFin() {
+            // Llamado cuando el audio termina naturalmente
+            samEstaHablando = false;
+            samSetBotones(false);
+            samSetStatus('✓ Listo', 'ok');
+            // Volver a idle con pequeño delay
+            setTimeout(() => {
+                clippyImg.src = GIF_IDLE;
+                setTimeout(() => samSetStatus(''), 2000);
+            }, 400);
+        }
+
+        // ======================================================
+        // MOTOR CLÍNICO: INTEGRACIÓN API TERAPIA Y PARSER HTML
+        // ======================================================
+
+        let terapiaTurno = 0;
+        
+        const DICT_ANIMACIONES = {
+            "Thinking": "rasca_preguntandose.gif",
+            "Alert": "simbolo_exclamacion.gif",
+            "Congratulate": "dice_correcto.gif",
+            "Hearing": "mostrando_interes.gif",
+            "CheckingSomething": "buscando_con_hoja.gif",
+            "Processing": "usa_ojos_para_moldearse.gif",
+            "EmptyTrash": "excavando_hojas.gif"
+        };
+        const animacionPensando = 'escribiendo_en_hoja.gif';
+        
+        const clippyImgDom = document.getElementById('clippyImg');
+        const clippyTextContainer = document.getElementById('clippyText');
+        const clippyActionsContainer = document.getElementById('clippyActions');
+
+        function parsearTipografiaEmocional(texto) {
+            let p = texto;
+            // Purga visual CERO EMOJIS solicitada por el usuario
+            p = p.replace(/[\u{1F600}-\u{1F6FF}]/gu, ''); // Emoticons
+            p = p.replace(/[\u{1F300}-\u{1F5FF}]/gu, ''); // Misc Symbols
+            p = p.replace(/[\u{1F680}-\u{1F6FF}]/gu, ''); // Transport
+            p = p.replace(/[\u{1F700}-\u{1F77F}]/gu, ''); // Alchemical
+            p = p.replace(/[\u{1F780}-\u{1F7FF}]/gu, ''); // Geometric Shapes
+            p = p.replace(/[\u{1F800}-\u{1F8FF}]/gu, ''); // Supplemental Arrows
+            p = p.replace(/[\u{1F900}-\u{1F9FF}]/gu, ''); // Supplemental Symbols
+            p = p.replace(/[\u{1FA00}-\u{1FA6F}]/gu, ''); // Chess Symbols
+            p = p.replace(/[\u{1FA70}-\u{1FAFF}]/gu, ''); // Symbols / Pictographs
+            p = p.replace(/[\u{2600}-\u{26FF}]/gu, '');   // Misc symbols
+            
+            // Markdown a CSS HTML
+            p = p.replace(/^#\s+(.*)$/gm, '<strong class="clippy-h1">$1</strong>'); // Títulos
+            p = p.replace(/\*\*(.*?)\*\*/g, '<strong class="clippy-bold">$1</strong>'); // Negritas
+            p = p.replace(/\*(.*?)\*/g, '<em class="clippy-italic">$1</em>'); // Cursivas
+            p = p.replace(/\b([A-ZÁÉÍÓÚÑ]{5,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,})*)\b/g, '<span class="clippy-caps">$1</span>'); // Mayúsculas rojas
+            // Small ya es nativo de HTML <small>
+            return p;
+        }
+
+        // Filtra cualquier texto antes de mandarlo a la boca de SAPI4 (Para evitar dislexia o errores de símbolos)
+        function sanitizarParaSAPI(texto) {
+            let s = texto.replace(/<[^>]*>/g, ''); // Remover HTML
+            s = s.replace(/[\n\t]+/g, ', '); // Saltos a comas
+            s = s.replace(/[\u{1F600}-\u{1F6FF}]/gu, ''); // Emojis
+            s = s.replace(/[\*#_\-~`=\+]/g, ' '); // Símbolos extraños
+            s = s.replace(/["'“”‘’«»]/g, ''); // Comillas
+            s = s.replace(/[\(\)\[\]\{\}]/g, ','); // Agrupación a comas
+            s = s.replace(/\s+/g, ' '); // Doble espacio
+            s = s.replace(/,(\s*,)+/g, ','); // Doble coma
+            return s.trim();
+        }
+
+        async function iniciarSesionTerapia() {
+            terapiaTurno = 0;
+            await enviarTerapia("", {});
+        }
+
+        async function enviarTerapia(mensaje, deltas) {
+            // Efecto teatral: animando antes de fetch (Random casual loaders)
+            const randomGifs = ['Thinking', 'CheckingSomething', 'Processing'];
+            const chosenGif = randomGifs[Math.floor(Math.random() * randomGifs.length)];
+            const animLoader = DICT_ANIMACIONES[chosenGif] || 'idle_pensando.gif';
+            clippyImgDom.src = 'assets/gifs/' + animLoader;
+            const textosCarga = [
+                "Estructurando ideas...",
+                "Acomodando hojas de papel...",
+                "Pensando en qué decir...",
+                "Procesando...",
+                "Buscando en los polvorientos archivos de 2004...",
+                "Escuchando pacientemente..."
+            ];
+            const textoRandom = textosCarga[Math.floor(Math.random() * textosCarga.length)];
+            clippyTextContainer.innerHTML = `<p class="burbuja-dinamica pulse-text">${textoRandom}</p>`;
+            clippyActionsContainer.innerHTML = '';
+            
+            try {
+                terapiaTurno++;
+                const res = await fetch('/api/terapia', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        mensaje_usuario: mensaje,
+                        delta_estadisticas: deltas,
+                        turno: terapiaTurno
+                    })
+                });
+                
+                if (!res.ok) throw new Error("API Exception");
+                const data = await res.json();
+                
+                // Retraso intencional mínimo para que el cerebro lo perciba orgánico
+                setTimeout(() => renderTerapiaResponse(data), 400);
+            } catch(e) {
+                clippyTextContainer.innerHTML = '<p class="clippy-h1" style="color:red">Error en la red neuronal local.</p>';
+                clippyImgDom.src = 'assets/gifs/idle_movimiento.gif';
+                terapiaTurno--;
+            }
+        }
+
+        let terapiaDialogosActivos = [];
+        let terapiaDialogosIndex = 0;
+        let terapiaBotonesActivos = [];
+        let terapiaAudioBuffers = []; // Caché RAM de los WAVs descodificados
+        let terapiaAudioPromises = []; // Promesas de Red en Vuelo por Párrafo
+        let sesionTerminada = false; // Bandera de terminación suave de terapia
+        let uiUserInteracted = false; // Semáforo de AutoPlay del Navegador
+        let terapiaAccionSistema = ""; // Flag RAG de cerrado
+        let timeoutInactividadGlobal = null;
+
+        function resetTimeoutInactividad() {
+            if (timeoutInactividadGlobal) clearTimeout(timeoutInactividadGlobal);
+            const bubble = document.getElementById('clippy-bubble');
+            if (!bubble || bubble.classList.contains('hidden') || sesionTerminada) return;
+            timeoutInactividadGlobal = setTimeout(() => {
+                // Si expira, inyecta la despedida secreta en background
+                enviarTerapia("[SYS_TIMEOUT: El usuario lleva más de 2 minutos inactivo en tu chat. Asume cortésmente que se ha ido por ahora y ya no está mirando su pantalla. Despídete de forma corta, y en tu Output JSON escribe estrictamente 'accion_sistema': 'CERRAR_SESION' para poder desconectar el sistema de red con gracia.]", {});
+            }, 120000);
+        }
+        // Listeners para el Cron de Inactividad (a nivel documento para evitar crash por DOM no listo)
+        document.addEventListener('mousemove', resetTimeoutInactividad);
+        document.addEventListener('click', resetTimeoutInactividad);
+        document.addEventListener('keypress', resetTimeoutInactividad);
+
+        function preCargarAudioWAVs(frases) {
+            terapiaAudioBuffers = new Array(frases.length).fill(null);
+            terapiaAudioPromises = new Array(frases.length).fill(null);
+
+            frases.forEach((mkdStr, index) => {
+                let txtLimpio = sanitizarParaSAPI(mkdStr);
+                if (txtLimpio === "") {
+                    terapiaAudioPromises[index] = Promise.resolve(null);
+                    return;
+                }
+                
+                // Las promesas se lanzan asíncronamente en background sin bloquear a toda la interfaz!
+                terapiaAudioPromises[index] = fetch('/habla?texto=' + encodeURIComponent(txtLimpio) + '&pitch=180&speed=158')
+                    .then(res => {
+                        if(res.ok) return res.arrayBuffer();
+                        return null;
+                    })
+                    .then(bufferData => {
+                        terapiaAudioBuffers[index] = bufferData;
+                        return bufferData;
+                    })
+                    .catch(e => { console.warn('WAV Prefetch error', index); return null; });
+            });
+        }
+
+        async function renderTerapiaResponse(data) {
+            let animUrl = DICT_ANIMACIONES[data.animacion] || 'idle_movimiento.gif';
+            clippyImgDom.src = 'assets/gifs/' + animUrl;
+
+            terapiaDialogosActivos = Array.isArray(data.dialogo) ? data.dialogo : [data.dialogo || ""];
+            terapiaDialogosIndex = 0;
+            terapiaBotonesActivos = data.botones || [];
+            terapiaAccionSistema = data.accion_sistema || "";
+            
+            if (terapiaAccionSistema === "CERRAR_SESION" || terapiaAccionSistema === "cerrar_sesion") {
+                sesionTerminada = true;
+                if (timeoutInactividadGlobal) clearTimeout(timeoutInactividadGlobal);
+            }
+            
+            resetTimeoutInactividad();
+            
+            // FASE BACKGROUND: 1. Disparar predicción de Inferencias Futuras
+            predecirFuturoLLM(terapiaBotonesActivos);
+
+            // FASE BACKGROUND: 2. Disparar Pre-Fetcheado de Voz por Hilos (SIN AWAIT)
+            preCargarAudioWAVs(terapiaDialogosActivos);
+            
+            mostrarBurbujaPaginada();
+        }
+
+        async function mostrarBurbujaPaginada() {
+            // Animación de Loading temporal antes de que el Audio del párrafo se decodifique
+            clippyTextContainer.innerHTML = '<p class="burbuja-dinamica pulse-text">Sincronizando track de voz...</p>';
+            clippyActionsContainer.innerHTML = '';
+            
+            if(terapiaDialogosIndex >= terapiaDialogosActivos.length) return;
+            
+            // ESPERAR ÚNICA Y EXCLUSIVAMENTE AL AUDIO DEL PÁRRAFO QUE INTENTAMOS VER
+            // Si el usuario lee despacio, para el Párrafo 2 esta promesa ya se cumplió pasivamente en background.
+            if (terapiaAudioPromises[terapiaDialogosIndex]) {
+                let resultingBuf = await terapiaAudioPromises[terapiaDialogosIndex];
+                terapiaAudioBuffers[terapiaDialogosIndex] = resultingBuf; 
+            }
+            
+            clippyTextContainer.innerHTML = '';
+            
+            const textoActualMkd = terapiaDialogosActivos[terapiaDialogosIndex];
+            
+            const p = document.createElement('p');
+            p.className = 'burbuja-dinamica fade-in';
+            p.innerHTML = parsearTipografiaEmocional(textoActualMkd);
+            clippyTextContainer.appendChild(p);
+
+            // Transmisión Local en RAM del Audio Decodificado
+            if (terapiaAudioBuffers[terapiaDialogosIndex]) {
+                const arrBuffer = terapiaAudioBuffers[terapiaDialogosIndex];
+                const cleanTxt = sanitizarParaSAPI(textoActualMkd);
+                reproducirBufferSAPIYTypewriter(arrBuffer, cleanTxt, p);
+            } else {
+                // Si la caché de red falló, mostraremos el texto íntegro iluminado simulando tecleo silencioso
+                iniciarTypewriterSincronoDOM(p, 1500); // 1.5s typing silencioso de fallback
+            }
+
+            if (terapiaDialogosIndex < terapiaDialogosActivos.length - 1) {
+                const btnAvance = document.createElement('button');
+                btnAvance.className = 'clippy-btn btn-ai';
+                btnAvance.style.textAlign = 'center';
+                btnAvance.style.fontWeight = 'bold';
+                btnAvance.innerHTML = '▶ Continuar leyendo...';
+                btnAvance.onclick = () => {
+                    terapiaDialogosIndex++;
+                    window.samParar(false);
+                    mostrarBurbujaPaginada();
+                };
+                clippyActionsContainer.appendChild(btnAvance);
+            } else {
+                if (sesionTerminada || terapiaAccionSistema === "CERRAR_SESION") {
+                    const btnCierre = document.createElement('button');
+                    btnCierre.className = 'clippy-btn btn-ai';
+                    btnCierre.style.backgroundColor = '#b71c1c';
+                    btnCierre.innerHTML = 'Apagar Interfáz de Chat';
+                    btnCierre.onclick = () => { window.samParar(false); cerrarModoActivo(); };
+                    // Autoclick en 5 segundos si el usuario cerró por Inactividad
+                    if (terapiaAccionSistema === "CERRAR_SESION") {
+                        setTimeout(() => { if (!document.getElementById('clippy-bubble').classList.contains('hidden')) btnCierre.click(); }, 6000);
+                    }
+                    clippyActionsContainer.appendChild(btnCierre);
+                } else {
+                    if (terapiaBotonesActivos.length > 0) {
+                        renderizarBotonesDecision();
+                    } else {
+                        // MODO DE CONVERSACIÓN LIBRE (Si OpenClaw no propuso botones fijos, entra a Continuous Free Chat)
+                        habilitarEscrituraLibre({});
+                    }
+                }
+            }
+        }
+
+        function renderizarBotonesDecision() {
+            if (terapiaBotonesActivos.length > 0) {
+                const btnRow = document.createElement('div');
+                btnRow.className = 'btn-row-dynamic fade-in';
+                
+                // La ejecución especulativa ya fue disparada en background desde el render inicial.
+                
+                terapiaBotonesActivos.forEach(btn => {
+                    const b = document.createElement('button');
+                    b.className = 'clippy-btn btn-ai';
+                    b.innerHTML = parsearTipografiaEmocional(btn.etiqueta);
+                    
+                    let etiqLimpia = btn.etiqueta.toLowerCase();
+                    
+                    // 1. Interceptor Crítico de Sesión (Previene bucle infinito LLM)
+                    if (etiqLimpia.includes("suficiente") || etiqLimpia.includes("terminar") || etiqLimpia.includes("procesar esto") || etiqLimpia.includes("cerrar")) {
+                        b.onclick = () => { 
+                            window.samParar(false); 
+                            sesionTerminada = true; 
+                            enviarTerapia(btn.etiqueta, btn.delta_estadisticas || {}); 
+                        };
+                    
+                    // 2. Interceptor de Entrada Libre
+                    } else if (etiqLimpia.includes("explicar") || etiqLimpia.includes("escribir") || etiqLimpia.includes("consola libre")) {
+                        b.onclick = () => { window.samParar(false); habilitarEscrituraLibre(btn.delta_estadisticas); };
+                    
+                    // 3. Botón Regular (con Caché Hit Inteligente)
+                    } else {
+                        b.onclick = () => { 
+                            window.samParar(false); 
+                            
+                            if (cacheFuturo[btn.etiqueta]) {
+                                // CACHE HIT: Inferencia Predictiva en 0 ms!
+                                terapiaTurno++;
+                                fetch('/api/terapia_commit', {
+                                    method: 'POST',
+                                    headers: {'Content-Type': 'application/json'},
+                                    body: JSON.stringify(btn.delta_estadisticas || {})
+                                });
+                                clippyImgDom.src = 'assets/gifs/' + animacionPensando;
+                                clippyTextContainer.innerHTML = '<p class="burbuja-dinamica pulse-text">Ramificación predictiva cargada...</p>';
+                                clippyActionsContainer.innerHTML = '';
+                                
+                                setTimeout(() => {
+                                    // Absorber los audios pre-solicitados por la red neuronal periférica
+                                    terapiaAudioPromises = cacheFuturoAudios[btn.etiqueta] || [];
+                                    terapiaAudioBuffers = new Array(terapiaAudioPromises.length).fill(null);
+                                    
+                                    // Render Directo SIN re-fetchear audios!
+                                    let data = cacheFuturo[btn.etiqueta];
+                                    let animUrl = DICT_ANIMACIONES[data.animacion] || 'idle_movimiento.gif';
+                                    clippyImgDom.src = 'assets/gifs/' + animUrl;
+                                    terapiaDialogosActivos = Array.isArray(data.dialogo) ? data.dialogo : [data.dialogo || ""];
+                                    terapiaDialogosIndex = 0;
+                                    terapiaBotonesActivos = data.botones || [];
+                                    
+                                    predecirFuturoLLM(terapiaBotonesActivos); // Predecimos el sgte nivel
+                                    // Se usa el array de promesas pre-inyectado en la linea 1485
+                                    mostrarBurbujaPaginada();
+                                }, 150);
+                            } else {
+                                // Fallback Fetch
+                                enviarTerapia(btn.etiqueta, btn.delta_estadisticas || {}); 
+                            }
+                        };
+                    }
+                    btnRow.appendChild(b);
+                });
+
+                // Botón comodín infinito para evitar que el usuario quede enjaulado en respuestas predefinidas
+                const bEscape = document.createElement('button');
+                bEscape.className = 'clippy-btn btn-ai';
+                bEscape.innerHTML = "<em>(Decir otra cosa...)</em>";
+                bEscape.onclick = () => { window.samParar(false); habilitarEscrituraLibre({}); };
+                btnRow.appendChild(bEscape);
+
+                clippyActionsContainer.appendChild(btnRow);
+            }
+        }
+
+        function cerrarModoActivo() {
+            clippyImgDom.src = 'assets/gifs/idle_movimiento.gif';
+            clippyTextContainer.innerHTML = '<p class="burbuja-dinamica fade-in" style="text-align:center;"><b>Sesión Terminada.</b><br>El proceso analítico entrará en reposo para permitir asimilación.</p>';
+            clippyActionsContainer.innerHTML = '';
+            setTimeout(() => window.location.reload(), 4000); // Purge memory block
+        }
+
+        // === KERNEL ESPECULATIVO (Speculative Inferences) ===
+        let cacheFuturo = {};
+        let cacheFuturoAudios = {}; // RAM Arrays of promises per button
+
+        function predecirFuturoLLM(botones) {
+            cacheFuturo = {}; 
+            cacheFuturoAudios = {}; // Limpia
+            botones.forEach(btn => {
+                let eq = btn.etiqueta.toLowerCase();
+                if(eq.includes("libre") || eq.includes("explicar") || eq.includes("escribir") || eq.includes("terminar") || eq.includes("suficiente")) return;
+                
+                let hypoTurno = terapiaTurno + 1;
+                fetch('/api/terapia', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        mensaje_usuario: btn.etiqueta,
+                        delta_estadisticas: btn.delta_estadisticas || {},
+                        turno: hypoTurno,
+                        is_speculative: true // <--- Clave Maestra de Seguridad
+                    })
+                }).then(res => res.json()).then(data => {
+                    cacheFuturo[btn.etiqueta] = data; // Almacenado JSON en background listo!
+                    
+                    // PRECARGA DE AUDIOS EN TERCER PLANO (Future Layer 3)
+                    let d = Array.isArray(data.dialogo) ? data.dialogo : [data.dialogo || ""];
+                    cacheFuturoAudios[btn.etiqueta] = d.map((mkdStr) => {
+                         let txtLimpio = sanitizarParaSAPI(mkdStr);
+                         if (txtLimpio === "") return Promise.resolve(null);
+                         return fetch('/habla?texto=' + encodeURIComponent(txtLimpio) + '&pitch=180&speed=148')
+                             .then(res => res.ok ? res.arrayBuffer() : null)
+                             .catch(e => null);
+                    });
+
+                }).catch(e => console.log('Silenced background error'));
+            });
+        }
+
+        function habilitarEscrituraLibre(deltas) {
+            clippyActionsContainer.innerHTML = `
+                <div class="input-libre-container burbuja-dinamica">
+                   <textarea id="aiTxtFree" placeholder="Escribe libremente aquí..." class="ai-free-input"></textarea>
+                   <button class="clippy-btn btn-ai-send">Enviar Respuesta</button>
+                </div>
+            `;
+            const b = clippyActionsContainer.querySelector('.btn-ai-send');
+            const i = document.getElementById('aiTxtFree');
+            i.focus();
+            b.onclick = () => {
+                if(i.value.trim() !== "") enviarTerapia("El paciente responde con sus palabras: " + i.value, deltas);
+            };
+        }
+
+        let samPlaybackGeneration = 0;
+
+        // === HELPERS DE AUDIO RAPIDO Y TYPEWRITER HTML ===
+        async function reproducirBufferSAPIYTypewriter(arrayBuffer, textoAnim, nodoHtmlP) {
+            samParar(false);
+            const myGeneration = ++samPlaybackGeneration;
+            samSetBotones(true);
+            samEstaHablando = true;
+
+            try {
+                const ctx = samGetAudioCtx();
+                
+                // Si está suspendido, solicitamos resume. Chrome puede congelar la promesa 
+                // infinitamente hasta el primer clic del usuario.
+                if (ctx.state === 'suspended') {
+                    let isResumed = false;
+                    const resumeProm = ctx.resume();
+                    resumeProm.then(() => isResumed = true);
+                    
+                    // Si en 400ms no ha reanudado, Chromum censuró el Autoplay. 
+                    // Simulamos el tecleo de Fallback visual para no 'vaciar' la pantalla inicial.
+                    setTimeout(() => {
+                        if (!isResumed && myGeneration === samPlaybackGeneration) {
+                            console.warn('[AutoPlay Policy] Audio retenido. Desplegando Fallback Visual Paginador.');
+                            iniciarTypewriterSincronoDOM(nodoHtmlP, 1500);
+                        }
+                    }, 400);
+
+                    await resumeProm;
+                }
+
+                // POST-DESCONGELACIÓN: Si otro Turno sobreescribió la generación (Ej. se dio un Click tardío)
+                // debemos abortar esta reproducción fantasma para no aplastar el audio reciente.
+                if (myGeneration !== samPlaybackGeneration) {
+                    console.log('[Kernel Audio] Hilo fantasma del Turno anterior abortado limpiamente.');
+                    return;
+                }
+
+                // Clonamos Buffer
+                const bufClonado = arrayBuffer.slice(0);
+                const audioBuffer = await ctx.decodeAudioData(bufClonado);
+
+                samSourceNode = ctx.createBufferSource();
+                samSourceNode.buffer = audioBuffer;
+                samSourceNode.connect(ctx.destination);
+                
+                // ENGANCHAMOS TYPEWRITER AL NODO HTML CON LA DURACIÓN DEL AUDIO!
+                iniciarTypewriterSincronoDOM(nodoHtmlP, audioBuffer.duration * 1000);
+                
+                samSourceNode.onended = () => {
+                    if (myGeneration === samPlaybackGeneration) samLimpiarFin();
+                };
+                samSourceNode.start(0);
+            } catch (e) {
+                if (myGeneration === samPlaybackGeneration) {
+                    samLimpiarFin();
+                    console.warn('Reproductor SAPI Falla Crítica:', e);
+                    iniciarTypewriterSincronoDOM(nodoHtmlP, 1500); // <-- Salvavidas visual
+                }
+            }
+        }
+
+        function iniciarTypewriterSincronoDOM(nodoDiv, durationMs) {
+            // 1. Envuelve cada letra cruda en un Span de Opacidad 0, respetando todas las etiquetas de tipografía
+            function wrapTextNodesAndHide(node) {
+                if (node.nodeType === 3) { 
+                    const text = node.textContent;
+                    if (!text.trim()) return;
+                    const fragment = document.createDocumentFragment();
+                    for (let i = 0; i < text.length; i++) {
+                        const sp = document.createElement('span');
+                        sp.className = 'tw-char';
+                        sp.style.opacity = '0'; // Letra Oculta!
+                        sp.textContent = text[i];
+                        fragment.appendChild(sp);
+                    }
+                    node.parentNode.replaceChild(fragment, node);
+                } else if (node.nodeType === 1) { 
+                    Array.from(node.childNodes).forEach(wrapTextNodesAndHide);
+                }
+            }
+            wrapTextNodesAndHide(nodoDiv);
+            
+            // 2. Extrae la línea temporal y revela en cascada
+            const spans = nodoDiv.querySelectorAll('.tw-char');
+            const total = spans.length;
+            if (total === 0) return;
+            
+            // Un colchón del 95% del tiempo de audio para que no se desfase en el último respiro
+            const intervalo = (durationMs * 0.95) / total;
+            samAnimTimers = [];
+            spans.forEach((sp, i) => {
+                const t = setTimeout(() => {
+                    sp.style.opacity = '1';
+                }, i * intervalo);
+                samAnimTimers.push(t);
+            });
+        }
+
+        function mostrarBotonArranque() {
+            clippyImgDom.src = 'assets/gifs/idle_movimiento.gif';
+            clippyTextContainer.innerHTML = '<p class="burbuja-dinamica fade-in" style="text-align:center;"><b>Subsistema Clippy_Psycho v2.0</b><br>Terminal médica pasiva en espera de enlace.</p>';
+            
+            const btnArranque = document.createElement('button');
+            btnArranque.className = 'clippy-btn btn-ai';
+            btnArranque.style.fontWeight = 'bold';
+            btnArranque.style.textAlign = 'center';
+            btnArranque.innerHTML = '⚡ Inicializar Motor Neuronal';
+            
+            btnArranque.onclick = () => {
+                uiUserInteracted = true;
+                
+                // Forzamos la inicialización y desbloqueo del AutoPlay durante este micro-segundo de Click
+                const ctx = samGetAudioCtx();
+                if (ctx.state === 'suspended') ctx.resume();
+                
+                btnArranque.disabled = true;
+                btnArranque.innerHTML = 'Enlazando red...';
+                iniciarSesionTerapia();
+            };
+            
+            clippyActionsContainer.innerHTML = '';
+            clippyActionsContainer.appendChild(btnArranque);
+        }
+
+        // INIT WIDGET
+        setTimeout(mostrarBotonArranque, 1500);
+
+    </script>
+</body>
+</html>
